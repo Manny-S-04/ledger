@@ -4,6 +4,7 @@ obj/
 .idea/*
 .pair/
 .pair/*
+.editorconfig
 /packages/
 riderModule.iml
 /_ReSharper.Caches/

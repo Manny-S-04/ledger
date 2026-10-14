@@ -1,0 +1,8 @@
+<!-- Applies to every project in the solution. The compiler enforces honesty: nullability lies and
+     other warnings fail the build, so pair's verify loop makes the model fix them before you see the code. -->
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

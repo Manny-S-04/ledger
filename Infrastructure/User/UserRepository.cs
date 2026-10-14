@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace Infrastructure.User;
 
-public class UserRepository : IUserRepository
+public sealed class UserRepository : IUserRepository
 {
     private readonly NpgsqlDataSource _dataSource;
 

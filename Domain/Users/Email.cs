@@ -9,7 +9,60 @@ public sealed record Email
         EmailAddress = emailAddress;
     }
 
-    public static Email Create(string emailAddress) => new(Normalize(emailAddress));
+    public static Email Create(string emailAddress)
+    {
+        if (string.IsNullOrWhiteSpace(emailAddress))
+            throw new ArgumentException("Email address cannot be null or empty", nameof(emailAddress));
+
+        var normalized = Normalize(emailAddress);
+        
+        if (!IsValidFormat(normalized))
+            throw new ArgumentException("Invalid email address format", nameof(emailAddress));
+
+        return new Email(normalized);
+    }
 
     private static string Normalize(string emailAddress) => emailAddress.Trim().ToLowerInvariant();
+    
+    private static bool IsValidFormat(string emailAddress)
+    {
+        int atCount = 0;
+        int atPosition = -1;
+        foreach (var c in emailAddress)
+        {
+            if (c == '@')
+            {
+                atCount++;
+                atPosition = emailAddress.IndexOf('@');
+            }
+        }
+        
+        if (atCount != 1) return false;
+        
+        var localPart = emailAddress[..atPosition];
+        var domainPart = emailAddress[(atPosition + 1)..];
+        
+        if (string.IsNullOrEmpty(localPart) || string.IsNullOrEmpty(domainPart))
+            return false;
+            
+        if (localPart.Contains("..") || domainPart.Contains(".."))
+            return false;
+            
+        if (!domainPart.Contains('.') || domainPart.StartsWith('.') || domainPart.EndsWith('.'))
+            return false;
+            
+        foreach (var c in localPart)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '.' && c != '_' && c != '+' && c != '-')
+                return false;
+        }
+        
+        foreach (var c in domainPart)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-')
+                return false;
+        }
+        
+        return true;
+    }
 }

@@ -1,0 +1,2 @@
+# Explicit types are a pair rule (~/.pair/rules.md), not an analyzer rule: the analyzer cannot allow
+# var for using/await using resources, so it would flag code that follows the style.
