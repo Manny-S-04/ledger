@@ -1,7 +1,9 @@
 using Api.EndPoints;
 using Npgsql;
+using Application.Accounts;
 using Application.Interfaces;
 using Application.Users;
+using Infrastructure.Account;
 using Infrastructure.User;
 
 namespace Api;
@@ -34,11 +36,18 @@ public static class Program
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.AddScoped<GetUserHandler>();
         builder.Services.AddScoped<CreateUserHandler>();
+        builder.Services.AddScoped<IAccountRepository, AccountRepository>();
+        builder.Services.AddScoped<CreateAccountHandler>();
+        builder.Services.AddScoped<UpdateAccountHandler>();
+        builder.Services.AddScoped<DeleteAccountHandler>();
+        builder.Services.AddScoped<GetAccountsByEmailHandler>();
+        builder.Services.AddScoped<GetAccountsByUserIdHandler>();
         
         var app = builder.Build();
         app.UseHttpsRedirection();
         app.UseAuthorization();
         app.MapUserEndpoints();
+        app.MapAccountEndpoints();
         
         var source = app.Services.GetRequiredService<NpgsqlDataSource>();
         await InitDb(source);
