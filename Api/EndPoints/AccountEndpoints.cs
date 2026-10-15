@@ -1,11 +1,28 @@
 using Application.Accounts;
+using Domain.Accounts;
 
 namespace Api.EndPoints;
 
 public static class AccountEndpoints
 {
-    private record CreateAccountRequest(int UserId, decimal Balance, string? Currency);
-    private record UpdateAccountRequest(int UserId, decimal Balance, string? Currency);
+    private record CreateAccountRequest(int UserId, string? Currency);
+
+    private record AccountResponse(
+        int Id,
+        int UserId,
+        string Balance,
+        string? Currency,
+        DateTime CreatedAt,
+        DateTime UpdatedAt)
+    {
+        public static AccountResponse From(Account account) =>
+            new(account.Id,
+                account.UserId,
+                account.Balance.ToString(),
+                account.Currency,
+                account.CreatedAt,
+                account.UpdatedAt);
+    }
 
     public static IEndpointRouteBuilder MapAccountEndpoints(
         this IEndpointRouteBuilder app)
@@ -14,7 +31,6 @@ public static class AccountEndpoints
 
         group.MapAccountGetEndpoints();
         group.MapAccountPostEndpoints();
-        group.MapAccountPutEndpoints();
         group.MapAccountDeleteEndpoints();
 
         return app;
@@ -37,7 +53,7 @@ public static class AccountEndpoints
             await handler.Handle(new GetAccountsByEmailQuery(email));
         return result switch
         {
-            GetAccountsByEmailResult.Found found => Results.Ok(found.Accounts),
+            GetAccountsByEmailResult.Found found => Results.Ok(found.Accounts.Select(AccountResponse.From)),
             GetAccountsByEmailResult.NotFound => Results.NotFound(),
             GetAccountsByEmailResult.InvalidEmail => Results.BadRequest(),
             GetAccountsByEmailResult.Failed => Results.StatusCode(500),
@@ -53,8 +69,7 @@ public static class AccountEndpoints
             await handler.Handle(new GetAccountsByUserIdQuery(userId));
         return result switch
         {
-            GetAccountsByUserIdResult.Found found => Results.Ok(found.Accounts),
-            GetAccountsByUserIdResult.NotFound => Results.NotFound(),
+            GetAccountsByUserIdResult.Found found => Results.Ok(found.Accounts.Select(AccountResponse.From)),
             GetAccountsByUserIdResult.InvalidUserId => Results.BadRequest(),
             GetAccountsByUserIdResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
@@ -74,39 +89,13 @@ public static class AccountEndpoints
         CreateAccountHandler handler)
     {
         CreateAccountResult result =
-            await handler.Handle(
-                new CreateAccountCommand(request.UserId, request.Balance, request.Currency));
+            await handler.Handle(new CreateAccountCommand(request.UserId, request.Currency));
         return result switch
         {
-            CreateAccountResult.Created created => Results.Ok(created.Account),
+            CreateAccountResult.Created created => Results.Ok(AccountResponse.From(created.Account)),
             CreateAccountResult.InvalidUserId => Results.BadRequest(),
-            CreateAccountResult.InvalidAmount => Results.BadRequest(),
+            CreateAccountResult.InvalidCurrency => Results.BadRequest(),
             CreateAccountResult.Failed => Results.StatusCode(500),
-            _ => Results.StatusCode(500)
-        };
-    }
-
-    private static RouteGroupBuilder MapAccountPutEndpoints(
-        this RouteGroupBuilder group)
-    {
-        group.MapPut("/{id:int}", UpdateAccount);
-
-        return group;
-    }
-
-    private static async Task<IResult> UpdateAccount(
-        int id,
-        UpdateAccountRequest request,
-        UpdateAccountHandler handler)
-    {
-        UpdateAccountResult result =
-            await handler.Handle(
-                new UpdateAccountCommand(id, request.UserId, request.Balance, request.Currency));
-        return result switch
-        {
-            UpdateAccountResult.Updated => Results.Ok(),
-            UpdateAccountResult.InvalidAmount => Results.BadRequest(),
-            UpdateAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };
     }
@@ -128,6 +117,7 @@ public static class AccountEndpoints
         return result switch
         {
             DeleteAccountResult.Deleted => Results.Ok(),
+            DeleteAccountResult.NotFound => Results.NotFound(),
             DeleteAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };

@@ -38,7 +38,6 @@ public static class Program
         builder.Services.AddScoped<CreateUserHandler>();
         builder.Services.AddScoped<IAccountRepository, AccountRepository>();
         builder.Services.AddScoped<CreateAccountHandler>();
-        builder.Services.AddScoped<UpdateAccountHandler>();
         builder.Services.AddScoped<DeleteAccountHandler>();
         builder.Services.AddScoped<GetAccountsByEmailHandler>();
         builder.Services.AddScoped<GetAccountsByUserIdHandler>();
