@@ -25,9 +25,7 @@ public class GetAccountsByUserIdHandler
         DbResult<IEnumerable<Account>> accounts = await _accountRepository.GetAccountsByUserIdAsync(userId.Value);
         return accounts switch
         {
-            DbResult<IEnumerable<Account>>.Success success when success.Value.Any() =>
-                new GetAccountsByUserIdResult.Found(success.Value),
-            DbResult<IEnumerable<Account>>.Success => new GetAccountsByUserIdResult.NotFound(),
+            DbResult<IEnumerable<Account>>.Success success => new GetAccountsByUserIdResult.Found(success.Value),
             _ => new GetAccountsByUserIdResult.Failed()
         };
     }

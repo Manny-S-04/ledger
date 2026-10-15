@@ -8,6 +8,9 @@ namespace Application.Accounts;
 
 public class CreateAccountHandler
 {
+    private static readonly string[] AllowedCurrencies =
+        ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "SEK", "NOK", "DKK"];
+
     private readonly IAccountRepository _accountRepository;
 
     public CreateAccountHandler(IAccountRepository accountRepository)
@@ -23,13 +26,13 @@ public class CreateAccountHandler
             return new CreateAccountResult.InvalidUserId();
         }
 
-        if (!Amount.TryCreate(command.Balance, out Amount balance))
+        if (command.Currency is null || !AllowedCurrencies.Contains(command.Currency))
         {
-            return new CreateAccountResult.InvalidAmount();
+            return new CreateAccountResult.InvalidCurrency();
         }
 
         DateTime now = DateTime.UtcNow;
-        Account account = Account.Create(userId.Value.Value, balance, command.Currency, now, now);
+        Account account = Account.Create(userId.Value.Value, Amount.Create(0m), command.Currency, now, now);
 
         DbResult<Account> created = await _accountRepository.CreateAccountAsync(account);
         return created switch

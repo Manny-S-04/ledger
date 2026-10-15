@@ -24,7 +24,7 @@ public sealed class AccountRepository : IAccountRepository
                 "INSERT INTO accounts (user_id, balance, currency, created_at, updated_at) VALUES (@userId, @balance, @currency, @createdAt, @updatedAt) RETURNING id", conn);
         
             cmd.Parameters.AddWithValue("@userId", account.UserId);
-            cmd.Parameters.AddWithValue("@balance", account.Balance);
+            cmd.Parameters.AddWithValue("@balance", account.Balance.Pence / 100m);
             cmd.Parameters.AddWithValue("@currency", account.Currency ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@createdAt", account.CreatedAt);
             cmd.Parameters.AddWithValue("@updatedAt", account.UpdatedAt);
@@ -61,10 +61,7 @@ public sealed class AccountRepository : IAccountRepository
         
             var rowsAffected = await cmd.ExecuteNonQueryAsync();
         
-            if (rowsAffected > 0)
-                return new DbResult<bool>.Success(true);
-            else
-                return new DbResult<bool>.Failure(DbError.Unknown);
+            return new DbResult<bool>.Success(rowsAffected > 0);
         }
         catch (Exception)
         {
@@ -119,7 +116,7 @@ public sealed class AccountRepository : IAccountRepository
             var userIdObj = await userCmd.ExecuteScalarAsync();
             if (userIdObj == null || userIdObj == DBNull.Value)
             {
-                return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
+                return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.NotFound);
             }
 
             var userId = (int)userIdObj;

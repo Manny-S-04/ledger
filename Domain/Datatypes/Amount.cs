@@ -13,13 +13,13 @@ public readonly record struct Amount
             ? amount
             : throw new ArgumentOutOfRangeException(
                 nameof(pounds),
-                "Amount must be positive with at most 2 decimal places.");
+                "Amount must be zero or positive with at most 2 decimal places.");
 
     public static bool TryCreate(decimal pounds, out Amount amount)
     {
         amount = default;
 
-        if (pounds <= 0)
+        if (pounds < 0)
             return false;
 
         var scaled = pounds * 100m;

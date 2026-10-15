@@ -23,6 +23,7 @@ public class DeleteAccountHandler
         return deleted switch
         {
             DbResult<bool>.Success { Value: true } => new DeleteAccountResult.Deleted(),
+            DbResult<bool>.Success { Value: false } => new DeleteAccountResult.NotFound(),
             _ => new DeleteAccountResult.Failed()
         };
     }

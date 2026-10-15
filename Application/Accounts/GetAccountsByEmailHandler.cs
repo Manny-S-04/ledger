@@ -29,9 +29,8 @@ public class GetAccountsByEmailHandler
         DbResult<IEnumerable<Account>> accounts = await _accountRepository.GetAccountsByEmailAsync(email);
         return accounts switch
         {
-            DbResult<IEnumerable<Account>>.Success success when success.Value.Any() =>
-                new GetAccountsByEmailResult.Found(success.Value),
-            DbResult<IEnumerable<Account>>.Success => new GetAccountsByEmailResult.NotFound(),
+            DbResult<IEnumerable<Account>>.Success success => new GetAccountsByEmailResult.Found(success.Value),
+            DbResult<IEnumerable<Account>>.Failure { Error: DbError.NotFound } => new GetAccountsByEmailResult.NotFound(),
             _ => new GetAccountsByEmailResult.Failed()
         };
     }
