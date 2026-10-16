@@ -78,6 +78,22 @@ public static class Program
             RequestContext.RequestId = context.TraceIdentifier;
             await next(context);
         });
+        // Runs inside the request-id middleware, so the framework's unhandled-exception log line
+        // (ExceptionHandlerMiddleware, Error level) carries the request id. Clients get ProblemDetails
+        // with that id as traceId instead of a stack trace.
+        app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
+        {
+            Exception? error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+            int status = error is BadHttpRequestException badRequest
+                ? badRequest.StatusCode
+                : StatusCodes.Status500InternalServerError;
+
+            await Results.Problem(
+                    statusCode: status,
+                    title: status == StatusCodes.Status500InternalServerError ? "An unexpected error occurred." : "Bad request.",
+                    extensions: new Dictionary<string, object?> { ["traceId"] = context.TraceIdentifier })
+                .ExecuteAsync(context);
+        }));
         app.UseHttpsRedirection();
         app.UseAuthentication();
         app.UseAuthorization();
