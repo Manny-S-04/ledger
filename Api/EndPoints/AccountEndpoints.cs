@@ -135,6 +135,7 @@ public static class AccountEndpoints
             CreateAccountResult.Created created => Results.Ok(AccountResponse.From(created.Account)),
             CreateAccountResult.InvalidUserId => Results.BadRequest(),
             CreateAccountResult.InvalidCurrency => Results.BadRequest(),
+            CreateAccountResult.AlreadyExists => Results.Conflict(),
             CreateAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };

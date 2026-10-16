@@ -36,6 +36,20 @@ public class CreateAccountHandler
             return new CreateAccountResult.InvalidCurrency();
         }
 
+        // Friendly early check; the (user_id, currency) unique constraint is the real guarantee under concurrency.
+        DbResult<bool> exists = await _accountRepository.AccountExistsAsync(userId.Value, currency);
+        switch (exists)
+        {
+            case DbResult<bool>.Success { Value: true }:
+                _logger.Info("result=AlreadyExists");
+                return new CreateAccountResult.AlreadyExists();
+            case DbResult<bool>.Success:
+                break;
+            case var _:
+                _logger.Info("result=Failed");
+                return new CreateAccountResult.Failed();
+        }
+
         DateTime now = DateTime.UtcNow;
         Account account = Account.Create(userId.Value.Value, Amount.Create(0m), currency, now, now);
 
@@ -43,6 +57,7 @@ public class CreateAccountHandler
         CreateAccountResult result = created switch
         {
             DbResult<Account>.Success success => new CreateAccountResult.Created(success.Value),
+            DbResult<Account>.Failure { Error: DbError.ConstraintViolation } => new CreateAccountResult.AlreadyExists(),
             _ => new CreateAccountResult.Failed()
         };
         _logger.Info($"result={result.GetType().Name}");

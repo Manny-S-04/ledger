@@ -110,7 +110,9 @@ public static class Program
     public static async Task InitDb(NpgsqlDataSource dataSource, IPasswordHasher passwordHasher, ILogger logger)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
-        
+
+        await ClearDb(connection, logger);
+
         var commands = new[]
         {
             @"
@@ -128,7 +130,8 @@ public static class Program
                 currency VARCHAR(3) NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES users(id)
+                CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES users(id),
+                CONSTRAINT uq_accounts_user_currency UNIQUE (user_id, currency)
             )",
         };
 
@@ -139,6 +142,15 @@ public static class Program
         }
         logger.Info("tables ensured");
         await SeedDb(dataSource, passwordHasher, logger);
+    }
+
+    // Drops all tables on every startup so each run starts from a fresh, freshly-seeded schema
+    // (schema changes in InitDb's CREATE statements take effect without migrations).
+    private static async Task ClearDb(NpgsqlConnection connection, ILogger logger)
+    {
+        await using var command = new NpgsqlCommand("DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS users;", connection);
+        await command.ExecuteNonQueryAsync();
+        logger.Warn("ClearDb: dropped all tables (runs on every startup)");
     }
 
     private static async Task SeedDb(NpgsqlDataSource dataSource, IPasswordHasher passwordHasher, ILogger logger)

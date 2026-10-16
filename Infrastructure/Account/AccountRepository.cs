@@ -53,10 +53,37 @@ public sealed class AccountRepository : IAccountRepository
             _logger.Info("result=Success");
             return new DbResult<Domain.Accounts.Account>.Success(createdAccount);
         }
+        catch (PostgresException ex) when (ex.SqlState == "23505") // unique_violation
+        {
+            _logger.Warn($"unique violation: {ex.ConstraintName}");
+            return new DbResult<Domain.Accounts.Account>.Failure(DbError.ConstraintViolation);
+        }
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
             return new DbResult<Domain.Accounts.Account>.Failure(DbError.Unknown);
+        }
+    }
+
+    public async Task<DbResult<bool>> AccountExistsAsync(UserId userId, Domain.Datatypes.Currency currency)
+    {
+        _logger.Info($"hit userId={userId.Value} currency={currency.Code}");
+        try
+        {
+            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var cmd = new NpgsqlCommand(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE user_id = @userId AND currency = @currency)", conn);
+            cmd.Parameters.AddWithValue("@userId", userId.Value);
+            cmd.Parameters.AddWithValue("@currency", currency.Code);
+
+            bool exists = await cmd.ExecuteScalarAsync() is true;
+            _logger.Info($"result=Success exists={exists}");
+            return new DbResult<bool>.Success(exists);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "failed");
+            return new DbResult<bool>.Failure(DbError.Unknown);
         }
     }
 
