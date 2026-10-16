@@ -22,12 +22,12 @@ public class CreateUserHandler
     public async Task<CreateUserResult> Handle(CreateUserCommand command)
     {
         _logger.Info("hit");
-        if (string.IsNullOrEmpty(command.Email))
+        Email? email = Email.TryCreate(command.Email);
+        if (email is null)
         {
             _logger.Info("result=InvalidEmail");
             return new CreateUserResult.InvalidEmail();
         }
-        var email = Email.Create(command.Email);
 
         var exists = await _userRepository.Exists(email);
 

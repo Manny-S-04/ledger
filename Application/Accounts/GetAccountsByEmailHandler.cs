@@ -21,12 +21,8 @@ public class GetAccountsByEmailHandler
     public async Task<GetAccountsByEmailResult> Handle(GetAccountsByEmailQuery query)
     {
         _logger.Info("hit");
-        Email email;
-        try
-        {
-            email = Email.Create(query.Email);
-        }
-        catch (ArgumentException)
+        Email? email = Email.TryCreate(query.Email);
+        if (email is null)
         {
             _logger.Info("result=InvalidEmail");
             return new GetAccountsByEmailResult.InvalidEmail();

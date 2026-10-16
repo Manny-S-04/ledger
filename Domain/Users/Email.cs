@@ -9,17 +9,15 @@ public sealed record Email
         EmailAddress = emailAddress;
     }
 
-    public static Email Create(string emailAddress)
+    // Returns null when the value isn't a valid email (same pattern as UserId.TryCreate).
+    public static Email? TryCreate(string? emailAddress)
     {
         if (string.IsNullOrWhiteSpace(emailAddress))
-            throw new ArgumentException("Email address cannot be null or empty", nameof(emailAddress));
+            return null;
 
-        var normalized = Normalize(emailAddress);
-        
-        if (!IsValidFormat(normalized))
-            throw new ArgumentException("Invalid email address format", nameof(emailAddress));
+        string normalized = Normalize(emailAddress);
 
-        return new Email(normalized);
+        return IsValidFormat(normalized) ? new Email(normalized) : null;
     }
 
     private static string Normalize(string emailAddress) => emailAddress.Trim().ToLowerInvariant();

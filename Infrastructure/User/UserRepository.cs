@@ -98,9 +98,16 @@ public sealed class UserRepository : IUserRepository
 
             while (await reader.ReadAsync())
             {
+                Email? storedEmail = Email.TryCreate(reader.GetString(1));
+                if (storedEmail is null)
+                {
+                    _logger.Warn($"stored email for user {reader.GetInt32(0)} is invalid");
+                    return new DbResult<IEnumerable<Domain.Users.User>>.Failure(DbError.Unknown);
+                }
+
                 var user = Domain.Users.User.Create(
                     reader.GetInt32(0),
-                    Email.Create(reader.GetString(1)),
+                    storedEmail,
                     reader.GetString(2),
                     reader.GetDateTime(3)
                 );
@@ -135,9 +142,16 @@ public sealed class UserRepository : IUserRepository
                 return new DbResult<Domain.Users.User>.Failure(DbError.NotFound);
             }
 
+            Email? storedEmail = Email.TryCreate(reader.GetString(1));
+            if (storedEmail is null)
+            {
+                _logger.Warn($"stored email for user {reader.GetInt32(0)} is invalid");
+                return new DbResult<Domain.Users.User>.Failure(DbError.Unknown);
+            }
+
             Domain.Users.User user = Domain.Users.User.Create(
                 reader.GetInt32(0),
-                Email.Create(reader.GetString(1)),
+                storedEmail,
                 reader.GetString(2),
                 reader.GetDateTime(3));
 
@@ -165,9 +179,16 @@ public sealed class UserRepository : IUserRepository
 
             if (await reader.ReadAsync())
             {
+                Email? storedEmail = Email.TryCreate(reader.GetString(1));
+                if (storedEmail is null)
+                {
+                    _logger.Warn($"stored email for user {reader.GetInt32(0)} is invalid");
+                    return new DbResult<Domain.Users.User>.Failure(DbError.Unknown);
+                }
+
                 var retrievedUser = Domain.Users.User.Create(
                         reader.GetInt32(0),
-                        Email.Create(reader.GetString(1)),
+                        storedEmail,
                         reader.GetString(2),
                         reader.GetDateTime(3)
                         );

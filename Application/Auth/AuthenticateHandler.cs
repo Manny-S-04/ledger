@@ -28,12 +28,8 @@ public class AuthenticateHandler
     public async Task<AuthenticateResult> Handle(AuthenticateCommand command)
     {
         _logger.Info("hit");
-        Email email;
-        try
-        {
-            email = Email.Create(command.Email);
-        }
-        catch (ArgumentException)
+        Email? email = Email.TryCreate(command.Email);
+        if (email is null)
         {
             // A malformed email can't belong to a user: same result as unknown email / wrong password.
             _logger.Info("result=NotFound");
