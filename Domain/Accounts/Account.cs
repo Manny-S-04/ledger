@@ -8,11 +8,11 @@ public class Account
     // foriegn key into user table
     public int UserId { get; set; }
     public Amount Balance { get; set; }
-    public string? Currency { get; set; }
+    public Currency Currency { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
-    private Account(int id, int userId, Amount balance, string? currency, DateTime createdAt, DateTime updatedAt)
+    private Account(int id, int userId, Amount balance, Currency currency, DateTime createdAt, DateTime updatedAt)
     {
         Id = id;
         UserId = userId;
@@ -22,7 +22,7 @@ public class Account
         UpdatedAt = updatedAt;
     }
 
-    private Account(int userId, Amount balance, string? currency, DateTime createdAt, DateTime updatedAt)
+    private Account(int userId, Amount balance, Currency currency, DateTime createdAt, DateTime updatedAt)
     {
         UserId = userId;
         Balance = balance;
@@ -31,12 +31,12 @@ public class Account
         UpdatedAt = updatedAt;
     }
 
-    public static Account Create(int id, int userId, Amount balance, string? currency, DateTime createdAt, DateTime updatedAt)
+    public static Account Create(int id, int userId, Amount balance, Currency currency, DateTime createdAt, DateTime updatedAt)
     {
         return new Account(id, userId, balance, currency, createdAt, updatedAt);
     }
 
-    public static Account Create(int userId, Amount balance, string? currency, DateTime createdAt, DateTime updatedAt)
+    public static Account Create(int userId, Amount balance, Currency currency, DateTime createdAt, DateTime updatedAt)
     {
         return new Account(userId, balance, currency, createdAt, updatedAt);
     }

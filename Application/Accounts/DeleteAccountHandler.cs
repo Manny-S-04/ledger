@@ -1,7 +1,5 @@
 using Application.DbResult;
 using Application.Interfaces;
-using Domain.Accounts;
-using Domain.Datatypes;
 using Domain.Users;
 using Application.Logging;
 using Microsoft.Extensions.Logging;
@@ -38,10 +36,7 @@ public class DeleteAccountHandler
                 return new DeleteAccountResult.Failed();
         }
 
-        // The repository deletes by Id only; the other fields are placeholders.
-        Account account = Account.Create(command.AccountId, 0, default(Amount), null, DateTime.UtcNow, DateTime.UtcNow);
-
-        DbResult<bool> deleted = await _accountRepository.DeleteAccountAsync(account);
+        DbResult<bool> deleted = await _accountRepository.DeleteAccountAsync(command.AccountId);
         DeleteAccountResult result = deleted switch
         {
             DbResult<bool>.Success { Value: true } => new DeleteAccountResult.Deleted(),

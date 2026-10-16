@@ -17,7 +17,7 @@ public static class AccountEndpoints
         int Id,
         int UserId,
         string Balance,
-        string? Currency,
+        string Currency,
         DateTime CreatedAt,
         DateTime UpdatedAt)
     {
@@ -25,7 +25,7 @@ public static class AccountEndpoints
             new(account.Id,
                 account.UserId,
                 account.Balance.ToString(),
-                account.Currency,
+                account.Currency.Code,
                 account.CreatedAt,
                 account.UpdatedAt);
     }

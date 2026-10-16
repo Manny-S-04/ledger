@@ -124,7 +124,7 @@ public static class Program
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 balance DECIMAL(15, 2) NOT NULL,
-                currency VARCHAR(3),
+                currency VARCHAR(3) NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES users(id)

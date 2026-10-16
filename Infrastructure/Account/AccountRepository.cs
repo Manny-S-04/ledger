@@ -30,7 +30,7 @@ public sealed class AccountRepository : IAccountRepository
         
             cmd.Parameters.AddWithValue("@userId", account.UserId);
             cmd.Parameters.AddWithValue("@balance", account.Balance.Pence / 100m);
-            cmd.Parameters.AddWithValue("@currency", account.Currency ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@currency", account.Currency.Code);
             cmd.Parameters.AddWithValue("@createdAt", account.CreatedAt);
             cmd.Parameters.AddWithValue("@updatedAt", account.UpdatedAt);
         
@@ -60,15 +60,15 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<bool>> DeleteAccountAsync(Domain.Accounts.Account account)
+    public async Task<DbResult<bool>> DeleteAccountAsync(int accountId)
     {
-        _logger.Info($"hit accountId={account.Id}");
+        _logger.Info($"hit accountId={accountId}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
             await using var cmd = new NpgsqlCommand("DELETE FROM accounts WHERE id = @id", conn);
         
-            cmd.Parameters.AddWithValue("@id", account.Id);
+            cmd.Parameters.AddWithValue("@id", accountId);
         
             var rowsAffected = await cmd.ExecuteNonQueryAsync();
         
@@ -130,11 +130,18 @@ public sealed class AccountRepository : IAccountRepository
         
             while (await reader.ReadAsync())
             {
+                Domain.Datatypes.Currency? currency = Domain.Datatypes.Currency.TryCreate(reader.GetString(3));
+                if (currency is null)
+                {
+                    _logger.Warn($"stored currency for account {reader.GetInt32(0)} is invalid");
+                    return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
+                }
+
                 var account = Domain.Accounts.Account.Create(
                     reader.GetInt32(0),
                     reader.GetInt32(1),
                     Amount.Create(reader.GetDecimal(2)),
-                    reader.GetString(3),
+                    currency,
                     reader.GetDateTime(4),
                     reader.GetDateTime(5)
                 );
@@ -181,11 +188,18 @@ public sealed class AccountRepository : IAccountRepository
 
             while (await reader.ReadAsync())
             {
+                Domain.Datatypes.Currency? currency = Domain.Datatypes.Currency.TryCreate(reader.GetString(3));
+                if (currency is null)
+                {
+                    _logger.Warn($"stored currency for account {reader.GetInt32(0)} is invalid");
+                    return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
+                }
+
                 var account = Domain.Accounts.Account.Create(
                     reader.GetInt32(0),
                     reader.GetInt32(1),
                     Amount.Create(reader.GetDecimal(2)),
-                    reader.IsDBNull(3) ? null : reader.GetString(3),
+                    currency,
                     reader.GetDateTime(4),
                     reader.GetDateTime(5)
                 );
@@ -212,7 +226,7 @@ public sealed class AccountRepository : IAccountRepository
     
             cmd.Parameters.AddWithValue("@id", account.Id);
             cmd.Parameters.AddWithValue("@balance", account.Balance);
-            cmd.Parameters.AddWithValue("@currency", account.Currency ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@currency", account.Currency.Code);
             cmd.Parameters.AddWithValue("@updatedAt", account.UpdatedAt);
     
             var rowsAffected = await cmd.ExecuteNonQueryAsync();

@@ -10,6 +10,6 @@ public interface IAccountRepository
    public Task<DbResult<IEnumerable<Account>>> GetAccountsByUserIdAsync(UserId userId);
    public Task<DbResult<Account>> CreateAccountAsync(Account account);
    public Task<DbResult<bool>> UpdateAccountAsync(Account account);
-   public Task<DbResult<bool>> DeleteAccountAsync(Account account);
+   public Task<DbResult<bool>> DeleteAccountAsync(int accountId);
    public Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId);
 }
