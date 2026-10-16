@@ -22,6 +22,6 @@ public class User
         CreatedAt = createdAt;
     }
     
-    public static User Create(int userId, Email email, string passwordHash, DateTime createdAt) => new User(email, passwordHash);
+    public static User Create(int userId, Email email, string passwordHash, DateTime createdAt) => new User(userId, email, passwordHash, createdAt);
     public static User Create(Email email, string passwordHash) => new User(email, passwordHash);
 }

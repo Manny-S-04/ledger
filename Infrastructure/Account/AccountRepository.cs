@@ -69,6 +69,30 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
+    public async Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId)
+    {
+        try
+        {
+            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var cmd = new NpgsqlCommand("SELECT user_id FROM accounts WHERE id = @id", conn);
+            cmd.Parameters.AddWithValue("@id", accountId);
+
+            object? ownerObj = await cmd.ExecuteScalarAsync();
+            if (ownerObj is not int owner)
+                return new DbResult<UserId>.Failure(DbError.NotFound);
+
+            UserId? ownerId = UserId.TryCreate(owner);
+            if (ownerId is null)
+                return new DbResult<UserId>.Failure(DbError.Unknown);
+
+            return new DbResult<UserId>.Success(ownerId.Value);
+        }
+        catch (Exception)
+        {
+            return new DbResult<UserId>.Failure(DbError.Unknown);
+        }
+    }
+
     public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByUserIdAsync(UserId userId)
     {
         try

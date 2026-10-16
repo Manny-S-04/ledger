@@ -11,4 +11,5 @@ public interface IAccountRepository
    public Task<DbResult<Account>> CreateAccountAsync(Account account);
    public Task<DbResult<bool>> UpdateAccountAsync(Account account);
    public Task<DbResult<bool>> DeleteAccountAsync(Account account);
+   public Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId);
 }

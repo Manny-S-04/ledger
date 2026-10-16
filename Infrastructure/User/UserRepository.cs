@@ -95,6 +95,33 @@ public sealed class UserRepository : IUserRepository
         }
     }
 
+    public async Task<DbResult<Domain.Users.User>> GetUserByEmail(Email email)
+    {
+        try
+        {
+            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var cmd = new NpgsqlCommand("SELECT id, email, password_hash, created_at FROM Users WHERE email = @email", conn);
+            cmd.Parameters.AddWithValue("@email", email.EmailAddress);
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+
+            if (!await reader.ReadAsync())
+                return new DbResult<Domain.Users.User>.Failure(DbError.NotFound);
+
+            Domain.Users.User user = Domain.Users.User.Create(
+                reader.GetInt32(0),
+                Email.Create(reader.GetString(1)),
+                reader.GetString(2),
+                reader.GetDateTime(3));
+
+            return new DbResult<Domain.Users.User>.Success(user);
+        }
+        catch (Exception)
+        {
+            return new DbResult<Domain.Users.User>.Failure(DbError.Unknown);
+        }
+    }
+
     public async Task<DbResult<Domain.Users.User>> GetUser(Email email, string passwordHash)
     {
         try
