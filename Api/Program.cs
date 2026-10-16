@@ -84,6 +84,60 @@ public static class Program
             await using var command = new NpgsqlCommand(commandText, connection);
             await command.ExecuteNonQueryAsync();
         }
+        await SeedDb(dataSource);
+    }
+
+    private static async Task SeedDb(NpgsqlDataSource dataSource)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+
+        await using var countCommand = new NpgsqlCommand("SELECT COUNT(*) FROM users", connection);
+        object? countObj = await countCommand.ExecuteScalarAsync();
+        if(countObj is not long count) throw new Exception("Failed to execute count in seeddb");
+
+        if (count == 0)
+        {
+            var insertCommand = new NpgsqlCommand(@"
+                    INSERT INTO users (id, email, password_hash, created_at) 
+                    VALUES 
+                    (1, 'user1@example.com', '$2b$12$examplehash1', '2023-01-01T00:00:00Z'),
+                    (2, 'user2@example.com', '$2b$12$examplehash2', '2023-01-01T00:00:00Z'),
+                    (3, 'user3@example.com', '$2b$12$examplehash3', '2023-01-01T00:00:00Z'),
+                    (4, 'user4@example.com', '$2b$12$examplehash4', '2023-01-01T00:00:00Z'),
+                    (5, 'user5@example.com', '$2b$12$examplehash5', '2023-01-01T00:00:00Z'),
+                    (6, 'user6@example.com', '$2b$12$examplehash6', '2023-01-01T00:00:00Z'),
+                    (7, 'user7@example.com', '$2b$12$examplehash7', '2023-01-01T00:00:00Z'),
+                    (8, 'user8@example.com', '$2b$12$examplehash8', '2023-01-01T00:00:00Z'),
+                    (9, 'user9@example.com', '$2b$12$examplehash9', '2023-01-01T00:00:00Z'),
+                    (10, 'user10@example.com', '$2b$12$examplehash10', '2023-01-01T00:00:00Z')
+                    ", connection);
+
+            await insertCommand.ExecuteNonQueryAsync();
+        }
+        
+        await using var accountCountCommand = new NpgsqlCommand("SELECT COUNT(*) FROM accounts", connection);
+        object? accountCountObj = await accountCountCommand.ExecuteScalarAsync();
+        if(accountCountObj is not long accountCount) throw new Exception("Failed to execute count in seeddb for accounts");
+
+        if (accountCount == 0)
+        {
+            var insertAccountsCommand = new NpgsqlCommand(@"
+                    INSERT INTO accounts (user_id, balance, currency) 
+                    VALUES 
+                    (1, 100.00, 'USD'),
+                    (2, 250.50, 'EUR'),
+                    (3, 500.00, 'GBP'),
+                    (4, 75.25, 'JPY'),
+                    (5, 1200.00, 'CAD'),
+                    (6, 300.75, 'AUD'),
+                    (7, 950.25, 'CHF'),
+                    (8, 425.00, 'SEK'),
+                    (9, 675.50, 'NOK'),
+                    (10, 800.00, 'DKK')
+                    ", connection);
+
+            await insertAccountsCommand.ExecuteNonQueryAsync();
+        }
     }
 }
 
@@ -94,8 +148,7 @@ A wallet platform where users hold balances, top up from an external provider (y
 
 Functional requirements
 
-next> F1. Users can create accounts, one currency.
-implement endpoints so that users can access their accounts and read the information
+F1. Users can create accounts, one currency.
 F2. Top-up starts from the client and completes when the provider calls back. The provider may call back late, twice, out of order, or never.
 F3. A transfer between two accounts is atomic, and no account may go negative. Concurrent transfers on one account must not break this.
 F4. Balance and a paginated statement can be queried, and a statement can be reproduced as of any past moment.
