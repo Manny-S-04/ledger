@@ -16,5 +16,6 @@ public enum DbError
 {
     Unavailable,
     ConstraintViolation,
+    NotFound,
     Unknown
 }
