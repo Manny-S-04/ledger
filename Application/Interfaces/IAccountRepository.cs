@@ -10,6 +10,7 @@ public interface IAccountRepository
    public Task<DbResult<IEnumerable<Account>>> GetAccountsByUserIdAsync(UserId userId);
    public Task<DbResult<Account>> CreateAccountAsync(Account account);
    public Task<DbResult<bool>> UpdateAccountAsync(Account account);
+   // Deletes only when balance is 0. Success(true) = deleted, Success(false) = balance > 0, Failure(NotFound) = no such account.
    public Task<DbResult<bool>> DeleteAccountAsync(int accountId);
    public Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId);
 }

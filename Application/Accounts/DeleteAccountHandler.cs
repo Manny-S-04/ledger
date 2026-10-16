@@ -40,7 +40,8 @@ public class DeleteAccountHandler
         DeleteAccountResult result = deleted switch
         {
             DbResult<bool>.Success { Value: true } => new DeleteAccountResult.Deleted(),
-            DbResult<bool>.Success { Value: false } => new DeleteAccountResult.NotFound(),
+            DbResult<bool>.Success { Value: false } => new DeleteAccountResult.HasBalance(),
+            DbResult<bool>.Failure { Error: DbError.NotFound } => new DeleteAccountResult.NotFound(),
             _ => new DeleteAccountResult.Failed()
         };
         _logger.Info($"result={result.GetType().Name}");

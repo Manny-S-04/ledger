@@ -165,6 +165,7 @@ public static class AccountEndpoints
             DeleteAccountResult.Deleted => Results.Ok(),
             DeleteAccountResult.NotFound => Results.NotFound(),
             DeleteAccountResult.Forbidden => Results.Forbid(),
+            DeleteAccountResult.HasBalance => Results.Conflict(),
             DeleteAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };

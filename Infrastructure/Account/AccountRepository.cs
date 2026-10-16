@@ -66,14 +66,30 @@ public sealed class AccountRepository : IAccountRepository
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
-            await using var cmd = new NpgsqlCommand("DELETE FROM accounts WHERE id = @id", conn);
-        
+
+            // Single statement: the balance check and the delete happen atomically under the row lock,
+            // so a concurrent balance change can't slip in between them.
+            await using var cmd = new NpgsqlCommand("DELETE FROM accounts WHERE id = @id AND balance = 0", conn);
             cmd.Parameters.AddWithValue("@id", accountId);
-        
-            var rowsAffected = await cmd.ExecuteNonQueryAsync();
-        
-            _logger.Info("result=Success");
-            return new DbResult<bool>.Success(rowsAffected > 0);
+
+            int rowsAffected = await cmd.ExecuteNonQueryAsync();
+            if (rowsAffected > 0)
+            {
+                _logger.Info("result=Success(deleted)");
+                return new DbResult<bool>.Success(true);
+            }
+
+            // Nothing deleted: only to report why (balance > 0 vs. no such account).
+            await using var existsCmd = new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM accounts WHERE id = @id)", conn);
+            existsCmd.Parameters.AddWithValue("@id", accountId);
+            if (await existsCmd.ExecuteScalarAsync() is true)
+            {
+                _logger.Info("result=Success(not deleted: balance > 0)");
+                return new DbResult<bool>.Success(false);
+            }
+
+            _logger.Info("result=Failure(NotFound)");
+            return new DbResult<bool>.Failure(DbError.NotFound);
         }
         catch (Exception ex)
         {
