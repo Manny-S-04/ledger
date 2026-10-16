@@ -7,10 +7,12 @@ namespace Application.Users;
 public class CreateUserHandler
 {
     private readonly IUserRepository _userRepository;
+    private readonly IPasswordHasher _passwordHasher;
     
-    public CreateUserHandler(IUserRepository userRepository)
+    public CreateUserHandler(IUserRepository userRepository, IPasswordHasher passwordHasher)
     {
         _userRepository = userRepository;
+        _passwordHasher = passwordHasher;
     }
     
     public async Task<CreateUserResult> Handle(CreateUserCommand command)
@@ -35,7 +37,7 @@ public class CreateUserHandler
                 return new CreateUserResult.Failed();
         }
 
-        var user = User.Create(email, command.PasswordHash);
+        var user = User.Create(email, _passwordHasher.Hash(command.PasswordHash));
 
         var createUser = await _userRepository.Create(user);
         return createUser switch

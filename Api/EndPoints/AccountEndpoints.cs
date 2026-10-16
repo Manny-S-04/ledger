@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Api.Auth;
 using Application.Accounts;
 using Domain.Accounts;
 
@@ -27,7 +29,7 @@ public static class AccountEndpoints
     public static IEndpointRouteBuilder MapAccountEndpoints(
         this IEndpointRouteBuilder app)
     {
-        RouteGroupBuilder group = app.MapGroup("/accounts");
+        RouteGroupBuilder group = app.MapGroup("/accounts").RequireAuthorization();
 
         group.MapAccountGetEndpoints();
         group.MapAccountPostEndpoints();
@@ -47,8 +49,14 @@ public static class AccountEndpoints
 
     private static async Task<IResult> GetAccountsByEmail(
         string email,
+        ClaimsPrincipal user,
         GetAccountsByEmailHandler handler)
     {
+        if (!string.Equals(email.Trim(), user.GetEmail(), StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Forbid();
+        }
+
         GetAccountsByEmailResult result =
             await handler.Handle(new GetAccountsByEmailQuery(email));
         return result switch
@@ -63,8 +71,14 @@ public static class AccountEndpoints
 
     private static async Task<IResult> GetAccountsByUserId(
         int userId,
+        ClaimsPrincipal user,
         GetAccountsByUserIdHandler handler)
     {
+        if (userId != user.GetUserId())
+        {
+            return Results.Forbid();
+        }
+
         GetAccountsByUserIdResult result =
             await handler.Handle(new GetAccountsByUserIdQuery(userId));
         return result switch
@@ -86,8 +100,14 @@ public static class AccountEndpoints
 
     private static async Task<IResult> CreateAccount(
         CreateAccountRequest request,
+        ClaimsPrincipal user,
         CreateAccountHandler handler)
     {
+        if (request.UserId != user.GetUserId())
+        {
+            return Results.Forbid();
+        }
+
         CreateAccountResult result =
             await handler.Handle(new CreateAccountCommand(request.UserId, request.Currency));
         return result switch
@@ -110,14 +130,16 @@ public static class AccountEndpoints
 
     private static async Task<IResult> DeleteAccount(
         int id,
+        ClaimsPrincipal user,
         DeleteAccountHandler handler)
     {
         DeleteAccountResult result =
-            await handler.Handle(new DeleteAccountCommand(id));
+            await handler.Handle(new DeleteAccountCommand(id, user.GetUserId()));
         return result switch
         {
             DeleteAccountResult.Deleted => Results.Ok(),
             DeleteAccountResult.NotFound => Results.NotFound(),
+            DeleteAccountResult.Forbidden => Results.Forbid(),
             DeleteAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };

@@ -1,9 +1,12 @@
+using Api.Auth;
 using Api.EndPoints;
 using Npgsql;
 using Application.Accounts;
+using Application.Auth;
 using Application.Interfaces;
 using Application.Users;
 using Infrastructure.Account;
+using Infrastructure.Auth;
 using Infrastructure.User;
 
 namespace Api;
@@ -32,10 +35,23 @@ public static class Program
                 "Connection string 'Ledger' is missing.");
 
         builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+        var jwtKey =
+            builder.Configuration["Jwt:Key"]
+            ?? throw new InvalidOperationException("Config 'Jwt:Key' is missing.");
+        var jwtExpiryMinutes = builder.Configuration.GetValue("Jwt:ExpiryMinutes", 15);
+
+        builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
+        builder.Services.AddSingleton<ITokenService>(_ =>
+            new HmacJwtTokenService(System.Text.Encoding.UTF8.GetBytes(jwtKey), TimeSpan.FromMinutes(jwtExpiryMinutes)));
+        builder.Services
+            .AddAuthentication(TokenAuthenticationHandler.SchemeName)
+            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TokenAuthenticationHandler>(
+                TokenAuthenticationHandler.SchemeName, null);
         builder.Services.AddAuthorization();
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.AddScoped<GetUserHandler>();
         builder.Services.AddScoped<CreateUserHandler>();
+        builder.Services.AddScoped<AuthenticateHandler>();
         builder.Services.AddScoped<IAccountRepository, AccountRepository>();
         builder.Services.AddScoped<CreateAccountHandler>();
         builder.Services.AddScoped<DeleteAccountHandler>();
@@ -44,17 +60,18 @@ public static class Program
         
         var app = builder.Build();
         app.UseHttpsRedirection();
+        app.UseAuthentication();
         app.UseAuthorization();
         app.MapUserEndpoints();
         app.MapAccountEndpoints();
         
         var source = app.Services.GetRequiredService<NpgsqlDataSource>();
-        await InitDb(source);
+        await InitDb(source, app.Services.GetRequiredService<IPasswordHasher>());
         
         return app;
     }
 
-    public static async Task InitDb(NpgsqlDataSource dataSource)
+    public static async Task InitDb(NpgsqlDataSource dataSource, IPasswordHasher passwordHasher)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
         
@@ -84,10 +101,10 @@ public static class Program
             await using var command = new NpgsqlCommand(commandText, connection);
             await command.ExecuteNonQueryAsync();
         }
-        await SeedDb(dataSource);
+        await SeedDb(dataSource, passwordHasher);
     }
 
-    private static async Task SeedDb(NpgsqlDataSource dataSource)
+    private static async Task SeedDb(NpgsqlDataSource dataSource, IPasswordHasher passwordHasher)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
 
@@ -100,17 +117,22 @@ public static class Program
             var insertCommand = new NpgsqlCommand(@"
                     INSERT INTO users (id, email, password_hash, created_at) 
                     VALUES 
-                    (1, 'user1@example.com', '$2b$12$examplehash1', '2023-01-01T00:00:00Z'),
-                    (2, 'user2@example.com', '$2b$12$examplehash2', '2023-01-01T00:00:00Z'),
-                    (3, 'user3@example.com', '$2b$12$examplehash3', '2023-01-01T00:00:00Z'),
-                    (4, 'user4@example.com', '$2b$12$examplehash4', '2023-01-01T00:00:00Z'),
-                    (5, 'user5@example.com', '$2b$12$examplehash5', '2023-01-01T00:00:00Z'),
-                    (6, 'user6@example.com', '$2b$12$examplehash6', '2023-01-01T00:00:00Z'),
-                    (7, 'user7@example.com', '$2b$12$examplehash7', '2023-01-01T00:00:00Z'),
-                    (8, 'user8@example.com', '$2b$12$examplehash8', '2023-01-01T00:00:00Z'),
-                    (9, 'user9@example.com', '$2b$12$examplehash9', '2023-01-01T00:00:00Z'),
-                    (10, 'user10@example.com', '$2b$12$examplehash10', '2023-01-01T00:00:00Z')
+                    (1, 'user1@example.com', @hash1, '2023-01-01T00:00:00Z'),
+                    (2, 'user2@example.com', @hash2, '2023-01-01T00:00:00Z'),
+                    (3, 'user3@example.com', @hash3, '2023-01-01T00:00:00Z'),
+                    (4, 'user4@example.com', @hash4, '2023-01-01T00:00:00Z'),
+                    (5, 'user5@example.com', @hash5, '2023-01-01T00:00:00Z'),
+                    (6, 'user6@example.com', @hash6, '2023-01-01T00:00:00Z'),
+                    (7, 'user7@example.com', @hash7, '2023-01-01T00:00:00Z'),
+                    (8, 'user8@example.com', @hash8, '2023-01-01T00:00:00Z'),
+                    (9, 'user9@example.com', @hash9, '2023-01-01T00:00:00Z'),
+                    (10, 'user10@example.com', @hash10, '2023-01-01T00:00:00Z')
                     ", connection);
+
+            for (int i = 1; i <= 10; i++)
+            {
+                insertCommand.Parameters.AddWithValue($"@hash{i}", passwordHasher.Hash($"password{i}"));
+            }
 
             await insertCommand.ExecuteNonQueryAsync();
         }

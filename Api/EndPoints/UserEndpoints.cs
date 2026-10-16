@@ -1,3 +1,4 @@
+using Application.Auth;
 using Application.Users;
 
 namespace Api.EndPoints;
@@ -5,6 +6,8 @@ namespace Api.EndPoints;
 public static class UserEndpoints
 {
     private record CreateUserRequest(string Email, string Password);
+    private record LoginRequest(string Email, string Password);
+    private record LoginResponse(string Token, DateTime ExpiresAt);
     public static IEndpointRouteBuilder MapUserEndpoints(
         this IEndpointRouteBuilder app)
     {
@@ -19,7 +22,7 @@ public static class UserEndpoints
     private static RouteGroupBuilder MapUserGetEndpoints(
         this RouteGroupBuilder group)
     {
-        group.MapGet("/", GetUsers);
+        group.MapGet("/", GetUsers).RequireAuthorization();
 
         return group;
     }
@@ -41,6 +44,7 @@ public static class UserEndpoints
         this RouteGroupBuilder group)
     {
         group.MapPost("/", CreateUser);
+        group.MapPost("/auth/login", Login);
 
         return group;
     }
@@ -60,6 +64,22 @@ public static class UserEndpoints
             CreateUserResult.InvalidEmail => Results.BadRequest(),
             CreateUserResult.AlreadyExists => Results.Conflict(),
             CreateUserResult.Failed => Results.StatusCode(400),
+            _ => Results.StatusCode(500)
+        };
+    }
+
+    private static async Task<IResult> Login(
+        LoginRequest request,
+        AuthenticateHandler handler)
+    {
+        AuthenticateResult result =
+            await handler.Handle(new AuthenticateCommand(request.Email, request.Password));
+        return result switch
+        {
+            AuthenticateResult.Found found =>
+                Results.Ok(new LoginResponse(found.Token.Value, found.Token.ExpiresAt)),
+            AuthenticateResult.NotFound => Results.Unauthorized(),
+            AuthenticateResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };
     }
