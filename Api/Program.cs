@@ -4,9 +4,11 @@ using Npgsql;
 using Application.Accounts;
 using Application.Auth;
 using Application.Interfaces;
+using Application.Logging;
 using Application.Users;
 using Infrastructure.Account;
 using Infrastructure.Auth;
+using Infrastructure.Logging;
 using Infrastructure.User;
 
 namespace Api;
@@ -16,10 +18,14 @@ public static class Program
     public static async Task Main(string[] args)
     {
         WebApplication app = await GenerateApp(args);
+        ILogger rootLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Api.Program");
         
         app.MapGet("/", (HttpContext httpContext) =>
         {
-            return Results.Ok("Hello World!");
+            rootLogger.Info("hit");
+            IResult response = Results.Ok("Hello World!");
+            rootLogger.Info($"result=Ok status={ResultStatus.Of(response)}");
+            return response;
         });
         
         app.Run();
@@ -28,6 +34,11 @@ public static class Program
     private static async Task<WebApplication> GenerateApp(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+
+        // All logs (ours and ASP.NET's) go through the channel logger: TryWrite into a bounded channel,
+        // drained to stdout by one background task.
+        builder.Logging.ClearProviders();
+        builder.Logging.AddProvider(new ChannelLoggerProvider(Console.Out, capacity: 1000));
 
         var connectionString =
             builder.Configuration.GetConnectionString("Ledger")
@@ -41,8 +52,11 @@ public static class Program
         var jwtExpiryMinutes = builder.Configuration.GetValue("Jwt:ExpiryMinutes", 15);
 
         builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
-        builder.Services.AddSingleton<ITokenService>(_ =>
-            new HmacJwtTokenService(System.Text.Encoding.UTF8.GetBytes(jwtKey), TimeSpan.FromMinutes(jwtExpiryMinutes)));
+        builder.Services.AddSingleton<ITokenService>(sp =>
+            new HmacJwtTokenService(
+                System.Text.Encoding.UTF8.GetBytes(jwtKey),
+                TimeSpan.FromMinutes(jwtExpiryMinutes),
+                sp.GetRequiredService<ILogger<HmacJwtTokenService>>()));
         builder.Services
             .AddAuthentication(TokenAuthenticationHandler.SchemeName)
             .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TokenAuthenticationHandler>(
@@ -59,6 +73,11 @@ public static class Program
         builder.Services.AddScoped<GetAccountsByUserIdHandler>();
         
         var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            RequestContext.RequestId = context.TraceIdentifier;
+            await next(context);
+        });
         app.UseHttpsRedirection();
         app.UseAuthentication();
         app.UseAuthorization();
@@ -66,12 +85,13 @@ public static class Program
         app.MapAccountEndpoints();
         
         var source = app.Services.GetRequiredService<NpgsqlDataSource>();
-        await InitDb(source, app.Services.GetRequiredService<IPasswordHasher>());
+        ILogger startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Api.Program");
+        await InitDb(source, app.Services.GetRequiredService<IPasswordHasher>(), startupLogger);
         
         return app;
     }
 
-    public static async Task InitDb(NpgsqlDataSource dataSource, IPasswordHasher passwordHasher)
+    public static async Task InitDb(NpgsqlDataSource dataSource, IPasswordHasher passwordHasher, ILogger logger)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
         
@@ -101,10 +121,11 @@ public static class Program
             await using var command = new NpgsqlCommand(commandText, connection);
             await command.ExecuteNonQueryAsync();
         }
-        await SeedDb(dataSource, passwordHasher);
+        logger.Info("tables ensured");
+        await SeedDb(dataSource, passwordHasher, logger);
     }
 
-    private static async Task SeedDb(NpgsqlDataSource dataSource, IPasswordHasher passwordHasher)
+    private static async Task SeedDb(NpgsqlDataSource dataSource, IPasswordHasher passwordHasher, ILogger logger)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
 
@@ -135,6 +156,11 @@ public static class Program
             }
 
             await insertCommand.ExecuteNonQueryAsync();
+            logger.Info("seeded users");
+        }
+        else
+        {
+            logger.Info($"users not seeded: table has {count} rows");
         }
         
         await using var accountCountCommand = new NpgsqlCommand("SELECT COUNT(*) FROM accounts", connection);
@@ -159,6 +185,11 @@ public static class Program
                     ", connection);
 
             await insertAccountsCommand.ExecuteNonQueryAsync();
+            logger.Info("seeded accounts");
+        }
+        else
+        {
+            logger.Info($"accounts not seeded: table has {accountCount} rows");
         }
     }
 }

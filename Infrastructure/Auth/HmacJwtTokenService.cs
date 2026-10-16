@@ -3,7 +3,9 @@ using System.Text;
 using System.Text.Json;
 using Application.Auth;
 using Application.Interfaces;
+using Application.Logging;
 using Domain.Users;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Auth;
 
@@ -15,14 +17,16 @@ public sealed class HmacJwtTokenService : ITokenService
 
     private readonly byte[] _key;
     private readonly TimeSpan _lifetime;
+    private readonly ILogger<HmacJwtTokenService> _logger;
 
-    public HmacJwtTokenService(byte[] key, TimeSpan lifetime)
+    public HmacJwtTokenService(byte[] key, TimeSpan lifetime, ILogger<HmacJwtTokenService> logger)
     {
         if (key.Length < 32)
             throw new ArgumentException("JWT signing key must be at least 32 bytes.", nameof(key));
 
         _key = key;
         _lifetime = lifetime;
+        _logger = logger;
     }
 
     public AuthToken Create(UserId userId, Email email)
@@ -47,19 +51,31 @@ public sealed class HmacJwtTokenService : ITokenService
     {
         string[] parts = token.Split('.');
         if (parts.Length != 3 || parts[0] != EncodedHeader)
+        {
+            _logger.Info("invalid token: malformed or unexpected header");
             return null;
+        }
 
         byte[]? signature = Base64UrlDecode(parts[2]);
         if (signature is null)
+        {
+            _logger.Info("invalid token: signature not base64url");
             return null;
+        }
 
         byte[] expected = Sign(parts[0] + "." + parts[1]);
         if (!CryptographicOperations.FixedTimeEquals(signature, expected))
+        {
+            _logger.Info("invalid token: bad signature");
             return null;
+        }
 
         byte[]? payloadBytes = Base64UrlDecode(parts[1]);
         if (payloadBytes is null)
+        {
+            _logger.Info("invalid token: payload not base64url");
             return null;
+        }
 
         JwtPayload? payload;
         try
@@ -68,14 +84,21 @@ public sealed class HmacJwtTokenService : ITokenService
         }
         catch (JsonException)
         {
+            _logger.Info("invalid token: payload not valid JSON");
             return null;
         }
 
         if (payload is null || payload.exp <= DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+        {
+            _logger.Info("invalid token: empty payload or expired");
             return null;
+        }
 
         if (!int.TryParse(payload.sub, out int userId) || UserId.TryCreate(userId) is null)
+        {
+            _logger.Info("invalid token: bad sub claim");
             return null;
+        }
 
         return new TokenClaims(userId, payload.email);
     }

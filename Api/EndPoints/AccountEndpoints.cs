@@ -3,10 +3,14 @@ using Api.Auth;
 using Application.Accounts;
 using Domain.Accounts;
 
+using Application.Logging;
+
 namespace Api.EndPoints;
 
 public static class AccountEndpoints
 {
+    private const string LogCategory = "Api.EndPoints.AccountEndpoints";
+
     private record CreateAccountRequest(int UserId, string? Currency);
 
     private record AccountResponse(
@@ -50,16 +54,20 @@ public static class AccountEndpoints
     private static async Task<IResult> GetAccountsByEmail(
         string email,
         ClaimsPrincipal user,
-        GetAccountsByEmailHandler handler)
+        GetAccountsByEmailHandler handler,
+        ILoggerFactory loggerFactory)
     {
+        ILogger logger = loggerFactory.CreateLogger(LogCategory);
+        logger.Info($"hit callerUserId={user.GetUserId()}");
         if (!string.Equals(email.Trim(), user.GetEmail(), StringComparison.OrdinalIgnoreCase))
         {
+            logger.Info("result=OwnershipMismatch status=403");
             return Results.Forbid();
         }
 
         GetAccountsByEmailResult result =
             await handler.Handle(new GetAccountsByEmailQuery(email));
-        return result switch
+        IResult response = result switch
         {
             GetAccountsByEmailResult.Found found => Results.Ok(found.Accounts.Select(AccountResponse.From)),
             GetAccountsByEmailResult.NotFound => Results.NotFound(),
@@ -67,27 +75,35 @@ public static class AccountEndpoints
             GetAccountsByEmailResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };
+        logger.Info($"result={result.GetType().Name} status={ResultStatus.Of(response)}");
+        return response;
     }
 
     private static async Task<IResult> GetAccountsByUserId(
         int userId,
         ClaimsPrincipal user,
-        GetAccountsByUserIdHandler handler)
+        GetAccountsByUserIdHandler handler,
+        ILoggerFactory loggerFactory)
     {
+        ILogger logger = loggerFactory.CreateLogger(LogCategory);
+        logger.Info($"hit userId={userId} callerUserId={user.GetUserId()}");
         if (userId != user.GetUserId())
         {
+            logger.Info("result=OwnershipMismatch status=403");
             return Results.Forbid();
         }
 
         GetAccountsByUserIdResult result =
             await handler.Handle(new GetAccountsByUserIdQuery(userId));
-        return result switch
+        IResult response = result switch
         {
             GetAccountsByUserIdResult.Found found => Results.Ok(found.Accounts.Select(AccountResponse.From)),
             GetAccountsByUserIdResult.InvalidUserId => Results.BadRequest(),
             GetAccountsByUserIdResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };
+        logger.Info($"result={result.GetType().Name} status={ResultStatus.Of(response)}");
+        return response;
     }
 
     private static RouteGroupBuilder MapAccountPostEndpoints(
@@ -101,16 +117,20 @@ public static class AccountEndpoints
     private static async Task<IResult> CreateAccount(
         CreateAccountRequest request,
         ClaimsPrincipal user,
-        CreateAccountHandler handler)
+        CreateAccountHandler handler,
+        ILoggerFactory loggerFactory)
     {
+        ILogger logger = loggerFactory.CreateLogger(LogCategory);
+        logger.Info($"hit userId={request.UserId} callerUserId={user.GetUserId()}");
         if (request.UserId != user.GetUserId())
         {
+            logger.Info("result=OwnershipMismatch status=403");
             return Results.Forbid();
         }
 
         CreateAccountResult result =
             await handler.Handle(new CreateAccountCommand(request.UserId, request.Currency));
-        return result switch
+        IResult response = result switch
         {
             CreateAccountResult.Created created => Results.Ok(AccountResponse.From(created.Account)),
             CreateAccountResult.InvalidUserId => Results.BadRequest(),
@@ -118,6 +138,8 @@ public static class AccountEndpoints
             CreateAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };
+        logger.Info($"result={result.GetType().Name} status={ResultStatus.Of(response)}");
+        return response;
     }
 
     private static RouteGroupBuilder MapAccountDeleteEndpoints(
@@ -131,11 +153,14 @@ public static class AccountEndpoints
     private static async Task<IResult> DeleteAccount(
         int id,
         ClaimsPrincipal user,
-        DeleteAccountHandler handler)
+        DeleteAccountHandler handler,
+        ILoggerFactory loggerFactory)
     {
+        ILogger logger = loggerFactory.CreateLogger(LogCategory);
+        logger.Info($"hit accountId={id} callerUserId={user.GetUserId()}");
         DeleteAccountResult result =
             await handler.Handle(new DeleteAccountCommand(id, user.GetUserId()));
-        return result switch
+        IResult response = result switch
         {
             DeleteAccountResult.Deleted => Results.Ok(),
             DeleteAccountResult.NotFound => Results.NotFound(),
@@ -143,5 +168,7 @@ public static class AccountEndpoints
             DeleteAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };
+        logger.Info($"result={result.GetType().Name} status={ResultStatus.Of(response)}");
+        return response;
     }
 }

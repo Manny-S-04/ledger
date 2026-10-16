@@ -1,4 +1,6 @@
 using Npgsql;
+using Application.Logging;
+using Microsoft.Extensions.Logging;
 using Application.DbResult;
 using Application.Interfaces;
 using Domain.Users;
@@ -9,14 +11,17 @@ namespace Infrastructure.Account;
 public sealed class AccountRepository : IAccountRepository
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly ILogger<AccountRepository> _logger;
 
-    public AccountRepository(NpgsqlDataSource dataSource)
+    public AccountRepository(NpgsqlDataSource dataSource, ILogger<AccountRepository> logger)
     {
         _dataSource = dataSource;
+        _logger = logger;
     }
 
     public async Task<DbResult<Domain.Accounts.Account>> CreateAccountAsync(Domain.Accounts.Account account)
     {
+        _logger.Info($"hit userId={account.UserId}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -32,7 +37,10 @@ public sealed class AccountRepository : IAccountRepository
             object? id = await cmd.ExecuteScalarAsync();
         
             if (id == null || id == DBNull.Value)
+            {
+                _logger.Info("result=Failure(Unknown)");
                 return new DbResult<Domain.Accounts.Account>.Failure(DbError.Unknown);
+            }
             
             var createdAccount = Domain.Accounts.Account.Create(
                 (int)id, 
@@ -42,16 +50,19 @@ public sealed class AccountRepository : IAccountRepository
                 account.CreatedAt, 
                 account.UpdatedAt);
             
+            _logger.Info("result=Success");
             return new DbResult<Domain.Accounts.Account>.Success(createdAccount);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "failed");
             return new DbResult<Domain.Accounts.Account>.Failure(DbError.Unknown);
         }
     }
 
     public async Task<DbResult<bool>> DeleteAccountAsync(Domain.Accounts.Account account)
     {
+        _logger.Info($"hit accountId={account.Id}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -61,16 +72,19 @@ public sealed class AccountRepository : IAccountRepository
         
             var rowsAffected = await cmd.ExecuteNonQueryAsync();
         
+            _logger.Info("result=Success");
             return new DbResult<bool>.Success(rowsAffected > 0);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "failed");
             return new DbResult<bool>.Failure(DbError.Unknown);
         }
     }
 
     public async Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId)
     {
+        _logger.Info($"hit accountId={accountId}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -79,22 +93,31 @@ public sealed class AccountRepository : IAccountRepository
 
             object? ownerObj = await cmd.ExecuteScalarAsync();
             if (ownerObj is not int owner)
+            {
+                _logger.Info("result=Failure(NotFound)");
                 return new DbResult<UserId>.Failure(DbError.NotFound);
+            }
 
             UserId? ownerId = UserId.TryCreate(owner);
             if (ownerId is null)
+            {
+                _logger.Info("result=Failure(Unknown)");
                 return new DbResult<UserId>.Failure(DbError.Unknown);
+            }
 
+            _logger.Info("result=Success");
             return new DbResult<UserId>.Success(ownerId.Value);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "failed");
             return new DbResult<UserId>.Failure(DbError.Unknown);
         }
     }
 
     public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByUserIdAsync(UserId userId)
     {
+        _logger.Info($"hit userId={userId.Value}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -119,16 +142,19 @@ public sealed class AccountRepository : IAccountRepository
                 accounts.Add(account);
             }
         
+            _logger.Info($"result=Success count={accounts.Count}");
             return new DbResult<IEnumerable<Domain.Accounts.Account>>.Success(accounts);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "failed");
             return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
         }
     }
 
     public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByEmailAsync(Email email)
     {
+        _logger.Info("hit");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -140,6 +166,7 @@ public sealed class AccountRepository : IAccountRepository
             var userIdObj = await userCmd.ExecuteScalarAsync();
             if (userIdObj == null || userIdObj == DBNull.Value)
             {
+                _logger.Info("result=Failure(NotFound)");
                 return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.NotFound);
             }
 
@@ -164,16 +191,19 @@ public sealed class AccountRepository : IAccountRepository
                 );
                 accounts.Add(account);
             }
+            _logger.Info($"result=Success count={accounts.Count}");
             return new DbResult<IEnumerable<Domain.Accounts.Account>>.Success(accounts);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "failed");
             return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
         }
     }
 
     public async Task<DbResult<bool>> UpdateAccountAsync(Domain.Accounts.Account account)
     {
+        _logger.Info($"hit accountId={account.Id}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -188,12 +218,19 @@ public sealed class AccountRepository : IAccountRepository
             var rowsAffected = await cmd.ExecuteNonQueryAsync();
     
             if (rowsAffected > 0)
+            {
+                _logger.Info("result=Success");
                 return new DbResult<bool>.Success(true);
+            }
             else
+            {
+                _logger.Info("result=Failure(Unknown)");
                 return new DbResult<bool>.Failure(DbError.Unknown);
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "failed");
             return new DbResult<bool>.Failure(DbError.Unknown);
         }
     }

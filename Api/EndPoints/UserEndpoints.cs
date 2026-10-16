@@ -1,10 +1,14 @@
 using Application.Auth;
 using Application.Users;
 
+using Application.Logging;
+
 namespace Api.EndPoints;
 
 public static class UserEndpoints
 {
+    private const string LogCategory = "Api.EndPoints.UserEndpoints";
+
     private record CreateUserRequest(string Email, string Password);
     private record LoginRequest(string Email, string Password);
     private record LoginResponse(string Token, DateTime ExpiresAt);
@@ -27,9 +31,12 @@ public static class UserEndpoints
         return group;
     }
 
-    private static async Task<IResult> GetUsers(GetUserHandler handler) {
+    private static async Task<IResult> GetUsers(GetUserHandler handler,
+        ILoggerFactory loggerFactory) {
+        ILogger logger = loggerFactory.CreateLogger(LogCategory);
+        logger.Info("hit");
         GetUserResult userResult = await handler.Handle();
-        return userResult switch
+        IResult response = userResult switch
         {
             GetUserResult.Success users => Results.Ok(users.Users),
             GetUserResult.FailedWithError =>
@@ -38,6 +45,8 @@ public static class UserEndpoints
             GetUserResult.Failed => Results.StatusCode(500),
             _ => Results.Ok()
         };
+        logger.Info($"result={userResult.GetType().Name} status={ResultStatus.Of(response)}");
+        return response;
     }
         
     private static RouteGroupBuilder MapUserPostEndpoints(
@@ -52,13 +61,16 @@ public static class UserEndpoints
         
     private static async Task<IResult> CreateUser(
         CreateUserRequest request,
-        CreateUserHandler handler)
+        CreateUserHandler handler,
+        ILoggerFactory loggerFactory)
     {
+        ILogger logger = loggerFactory.CreateLogger(LogCategory);
+        logger.Info("hit");
         CreateUserResult userResult =
             await handler.Handle(
                     new CreateUserCommand(request.Email, request.Password)
                     );
-        return userResult switch
+        IResult response = userResult switch
         {
             CreateUserResult.Created => Results.Ok(),
             CreateUserResult.InvalidEmail => Results.BadRequest(),
@@ -66,15 +78,20 @@ public static class UserEndpoints
             CreateUserResult.Failed => Results.StatusCode(400),
             _ => Results.StatusCode(500)
         };
+        logger.Info($"result={userResult.GetType().Name} status={ResultStatus.Of(response)}");
+        return response;
     }
 
     private static async Task<IResult> Login(
         LoginRequest request,
-        AuthenticateHandler handler)
+        AuthenticateHandler handler,
+        ILoggerFactory loggerFactory)
     {
+        ILogger logger = loggerFactory.CreateLogger(LogCategory);
+        logger.Info("hit");
         AuthenticateResult result =
             await handler.Handle(new AuthenticateCommand(request.Email, request.Password));
-        return result switch
+        IResult response = result switch
         {
             AuthenticateResult.Found found =>
                 Results.Ok(new LoginResponse(found.Token.Value, found.Token.ExpiresAt)),
@@ -82,5 +99,7 @@ public static class UserEndpoints
             AuthenticateResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };
+        logger.Info($"result={result.GetType().Name} status={ResultStatus.Of(response)}");
+        return response;
     }
 }
