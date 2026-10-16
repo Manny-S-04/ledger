@@ -58,7 +58,7 @@ public static class AccountEndpoints
         ILoggerFactory loggerFactory)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info($"hit callerUserId={user.GetUserId()}");
+        logger.Info($"Get accounts by email request received, callerUserId={user.GetUserId()}");
         if (!string.Equals(email.Trim(), user.GetEmail(), StringComparison.OrdinalIgnoreCase))
         {
             logger.Info("result=OwnershipMismatch status=403");
@@ -86,7 +86,7 @@ public static class AccountEndpoints
         ILoggerFactory loggerFactory)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info($"hit userId={userId} callerUserId={user.GetUserId()}");
+        logger.Info($"Get accounts request received for userId={userId}, callerUserId={user.GetUserId()}");
         if (userId != user.GetUserId())
         {
             logger.Info("result=OwnershipMismatch status=403");
@@ -121,7 +121,7 @@ public static class AccountEndpoints
         ILoggerFactory loggerFactory)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info($"hit userId={request.UserId} callerUserId={user.GetUserId()}");
+        logger.Info($"Create account request received for userId={request.UserId}, callerUserId={user.GetUserId()}");
         if (request.UserId != user.GetUserId())
         {
             logger.Info("result=OwnershipMismatch status=403");
@@ -158,7 +158,7 @@ public static class AccountEndpoints
         ILoggerFactory loggerFactory)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info($"hit accountId={id} callerUserId={user.GetUserId()}");
+        logger.Info($"Delete account request received for accountId={id}, callerUserId={user.GetUserId()}");
         DeleteAccountResult result =
             await handler.Handle(new DeleteAccountCommand(id, user.GetUserId()));
         IResult response = result switch

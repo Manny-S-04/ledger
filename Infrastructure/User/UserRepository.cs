@@ -20,7 +20,7 @@ public sealed class UserRepository : IUserRepository
 
     public async Task<DbResult<UserId>> Create(Domain.Users.User user)
     {
-        _logger.Info("hit");
+        _logger.Info("Inserting new user");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -60,7 +60,7 @@ public sealed class UserRepository : IUserRepository
 
     public async Task<DbResult<bool>> Exists(Email email)
     {
-        _logger.Info("hit");
+        _logger.Info("Checking whether a user with this email already exists");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -87,7 +87,7 @@ public sealed class UserRepository : IUserRepository
 
     public async Task<DbResult<Domain.Users.User>> GetUserByEmail(Email email)
     {
-        _logger.Info("hit");
+        _logger.Info("Looking up user by email");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();

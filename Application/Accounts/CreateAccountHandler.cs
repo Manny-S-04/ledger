@@ -21,7 +21,7 @@ public class CreateAccountHandler
 
     public async Task<CreateAccountResult> Handle(CreateAccountCommand command)
     {
-        _logger.Info($"hit userId={command.UserId} currency={command.Currency}");
+        _logger.Info($"Creating account for userId={command.UserId} currency={command.Currency}");
         UserId? userId = UserId.TryCreate(command.UserId);
         if (userId is null)
         {

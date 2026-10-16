@@ -21,7 +21,7 @@ public sealed class AccountRepository : IAccountRepository
 
     public async Task<DbResult<Domain.Accounts.Account>> CreateAccountAsync(Domain.Accounts.Account account)
     {
-        _logger.Info($"hit userId={account.UserId}");
+        _logger.Info($"Inserting account for userId={account.UserId}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -67,7 +67,7 @@ public sealed class AccountRepository : IAccountRepository
 
     public async Task<DbResult<bool>> AccountExistsAsync(UserId userId, Domain.Datatypes.Currency currency)
     {
-        _logger.Info($"hit userId={userId.Value} currency={currency.Code}");
+        _logger.Info($"Checking for an existing account userId={userId.Value} currency={currency.Code}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -89,7 +89,7 @@ public sealed class AccountRepository : IAccountRepository
 
     public async Task<DbResult<bool>> DeleteAccountAsync(int accountId)
     {
-        _logger.Info($"hit accountId={accountId}");
+        _logger.Info($"Looking up owner of accountId={accountId}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -127,7 +127,7 @@ public sealed class AccountRepository : IAccountRepository
 
     public async Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId)
     {
-        _logger.Info($"hit accountId={accountId}");
+        _logger.Info($"Deleting accountId={accountId} (only if balance is 0)");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -160,7 +160,7 @@ public sealed class AccountRepository : IAccountRepository
 
     public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByUserIdAsync(UserId userId)
     {
-        _logger.Info($"hit userId={userId.Value}");
+        _logger.Info($"Loading accounts for userId={userId.Value}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -204,7 +204,7 @@ public sealed class AccountRepository : IAccountRepository
 
     public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByEmailAsync(Email email)
     {
-        _logger.Info("hit");
+        _logger.Info("Loading accounts by email");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -260,7 +260,7 @@ public sealed class AccountRepository : IAccountRepository
 
     public async Task<DbResult<bool>> UpdateAccountAsync(Domain.Accounts.Account account)
     {
-        _logger.Info($"hit accountId={account.Id}");
+        _logger.Info($"Updating accountId={account.Id}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();

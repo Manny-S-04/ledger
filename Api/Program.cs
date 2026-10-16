@@ -23,7 +23,7 @@ public static class Program
         
         app.MapGet("/", (HttpContext httpContext) =>
         {
-            rootLogger.Info("hit");
+            rootLogger.Info("GET / request received");
             IResult response = Results.Ok("Hello World!");
             rootLogger.Info($"result=Ok status={ResultStatus.Of(response)}");
             return response;

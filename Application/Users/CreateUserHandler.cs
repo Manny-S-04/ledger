@@ -21,7 +21,7 @@ public class CreateUserHandler
     
     public async Task<CreateUserResult> Handle(CreateUserCommand command)
     {
-        _logger.Info("hit");
+        _logger.Info("Creating user");
         Email? email = Email.TryCreate(command.Email);
         if (email is null)
         {

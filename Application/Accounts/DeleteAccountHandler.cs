@@ -19,7 +19,7 @@ public class DeleteAccountHandler
 
     public async Task<DeleteAccountResult> Handle(DeleteAccountCommand command)
     {
-        _logger.Info($"hit accountId={command.AccountId} requestingUserId={command.RequestingUserId}");
+        _logger.Info($"Deleting accountId={command.AccountId} requested by userId={command.RequestingUserId}");
         DbResult<UserId> owner = await _accountRepository.GetAccountOwnerAsync(command.AccountId);
         switch (owner)
         {

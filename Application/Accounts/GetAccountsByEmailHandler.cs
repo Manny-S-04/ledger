@@ -20,7 +20,7 @@ public class GetAccountsByEmailHandler
 
     public async Task<GetAccountsByEmailResult> Handle(GetAccountsByEmailQuery query)
     {
-        _logger.Info("hit");
+        _logger.Info("Getting accounts by email");
         Email? email = Email.TryCreate(query.Email);
         if (email is null)
         {

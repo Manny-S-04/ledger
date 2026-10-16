@@ -20,7 +20,7 @@ public class GetAccountsByUserIdHandler
 
     public async Task<GetAccountsByUserIdResult> Handle(GetAccountsByUserIdQuery query)
     {
-        _logger.Info($"hit userId={query.UserId}");
+        _logger.Info($"Getting accounts for userId={query.UserId}");
         UserId? userId = UserId.TryCreate(query.UserId);
         if (userId is null)
         {

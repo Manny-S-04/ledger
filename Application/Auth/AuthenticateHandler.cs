@@ -27,7 +27,7 @@ public class AuthenticateHandler
 
     public async Task<AuthenticateResult> Handle(AuthenticateCommand command)
     {
-        _logger.Info("hit");
+        _logger.Info("Authenticating user");
         Email? email = Email.TryCreate(command.Email);
         if (email is null)
         {

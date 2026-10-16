@@ -38,7 +38,7 @@ public static class UserEndpoints
         ILoggerFactory loggerFactory)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info("hit");
+        logger.Info("Signup request received");
         CreateUserResult userResult =
             await handler.Handle(
                     new CreateUserCommand(request.Email, request.Password)
@@ -62,7 +62,7 @@ public static class UserEndpoints
         ILoggerFactory loggerFactory)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info("hit");
+        logger.Info("Login request received");
         AuthenticateResult result =
             await handler.Handle(new AuthenticateCommand(request.Email, request.Password));
         IResult response = result switch
