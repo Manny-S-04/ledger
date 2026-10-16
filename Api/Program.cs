@@ -63,7 +63,6 @@ public static class Program
                 TokenAuthenticationHandler.SchemeName, null);
         builder.Services.AddAuthorization();
         builder.Services.AddScoped<IUserRepository, UserRepository>();
-        builder.Services.AddScoped<GetUserHandler>();
         builder.Services.AddScoped<CreateUserHandler>();
         builder.Services.AddScoped<AuthenticateHandler>();
         builder.Services.AddScoped<IAccountRepository, AccountRepository>();

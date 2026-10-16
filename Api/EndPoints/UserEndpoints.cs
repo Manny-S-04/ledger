@@ -17,38 +17,11 @@ public static class UserEndpoints
     {
         var group = app.MapGroup("/users");
         
-        group.MapUserGetEndpoints();
         group.MapUserPostEndpoints();
 
         return app;
     }
 
-    private static RouteGroupBuilder MapUserGetEndpoints(
-        this RouteGroupBuilder group)
-    {
-        group.MapGet("/", GetUsers).RequireAuthorization();
-
-        return group;
-    }
-
-    private static async Task<IResult> GetUsers(GetUserHandler handler,
-        ILoggerFactory loggerFactory) {
-        ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info("hit");
-        GetUserResult userResult = await handler.Handle();
-        IResult response = userResult switch
-        {
-            GetUserResult.Success users => Results.Ok(users.Users),
-            GetUserResult.FailedWithError =>
-                // handle error
-                Results.StatusCode(400),
-            GetUserResult.Failed => Results.StatusCode(500),
-            _ => Results.Ok()
-        };
-        logger.Info($"result={userResult.GetType().Name} status={ResultStatus.Of(response)}");
-        return response;
-    }
-        
     private static RouteGroupBuilder MapUserPostEndpoints(
         this RouteGroupBuilder group)
     {
