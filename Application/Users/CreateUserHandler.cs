@@ -29,6 +29,13 @@ public class CreateUserHandler
             return new CreateUserResult.InvalidEmail();
         }
 
+        Password? password = Password.TryCreate(command.Password, out string? passwordError);
+        if (password is null)
+        {
+            _logger.Info($"result=InvalidPassword reason={passwordError}");
+            return new CreateUserResult.InvalidPassword(passwordError ?? "Invalid password.");
+        }
+
         var exists = await _userRepository.Exists(email);
 
         switch (exists)
@@ -46,7 +53,7 @@ public class CreateUserHandler
                 return new CreateUserResult.Failed();
         }
 
-        var user = User.Create(email, _passwordHasher.Hash(command.PasswordHash));
+        var user = User.Create(email, password.Hash(_passwordHasher));
 
         var createUser = await _userRepository.Create(user);
         CreateUserResult result = createUser switch

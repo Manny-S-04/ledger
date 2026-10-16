@@ -6,6 +6,7 @@ using Application.Auth;
 using Application.Interfaces;
 using Application.Logging;
 using Application.Users;
+using Domain.Users;
 using Infrastructure.Account;
 using Infrastructure.Auth;
 using Infrastructure.Logging;
@@ -165,9 +166,12 @@ public static class Program
                     ('user10@example.com', @hash10, '2023-01-01T00:00:00Z')
                     ", connection);
 
+            // Seed passwords go through the Password type, so they must satisfy its rules: userN -> passN.
             for (int i = 1; i <= 10; i++)
             {
-                insertCommand.Parameters.AddWithValue($"@hash{i}", passwordHasher.Hash($"password{i}"));
+                Password password = Password.TryCreate($"pass{i}", out string? error)
+                    ?? throw new InvalidOperationException($"Seed password for user{i} is invalid: {error}");
+                insertCommand.Parameters.AddWithValue($"@hash{i}", password.Hash(passwordHasher));
             }
 
             await insertCommand.ExecuteNonQueryAsync();

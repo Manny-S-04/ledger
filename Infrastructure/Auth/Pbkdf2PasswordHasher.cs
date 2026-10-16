@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
-using Application.Interfaces;
+using Domain.Users;
 
 namespace Infrastructure.Auth;
 

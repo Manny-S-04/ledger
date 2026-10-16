@@ -47,6 +47,7 @@ public static class UserEndpoints
         {
             CreateUserResult.Created => Results.Ok(),
             CreateUserResult.InvalidEmail => Results.BadRequest(),
+            CreateUserResult.InvalidPassword invalid => Results.Problem(statusCode: 400, title: invalid.Reason),
             CreateUserResult.AlreadyExists => Results.Conflict(),
             CreateUserResult.Failed => Results.StatusCode(400),
             _ => Results.StatusCode(500)
