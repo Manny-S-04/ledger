@@ -136,18 +136,18 @@ public static class Program
         if (count == 0)
         {
             var insertCommand = new NpgsqlCommand(@"
-                    INSERT INTO users (id, email, password_hash, created_at) 
+                    INSERT INTO users (email, password_hash, created_at) 
                     VALUES 
-                    (1, 'user1@example.com', @hash1, '2023-01-01T00:00:00Z'),
-                    (2, 'user2@example.com', @hash2, '2023-01-01T00:00:00Z'),
-                    (3, 'user3@example.com', @hash3, '2023-01-01T00:00:00Z'),
-                    (4, 'user4@example.com', @hash4, '2023-01-01T00:00:00Z'),
-                    (5, 'user5@example.com', @hash5, '2023-01-01T00:00:00Z'),
-                    (6, 'user6@example.com', @hash6, '2023-01-01T00:00:00Z'),
-                    (7, 'user7@example.com', @hash7, '2023-01-01T00:00:00Z'),
-                    (8, 'user8@example.com', @hash8, '2023-01-01T00:00:00Z'),
-                    (9, 'user9@example.com', @hash9, '2023-01-01T00:00:00Z'),
-                    (10, 'user10@example.com', @hash10, '2023-01-01T00:00:00Z')
+                    ('user1@example.com', @hash1, '2023-01-01T00:00:00Z'),
+                    ('user2@example.com', @hash2, '2023-01-01T00:00:00Z'),
+                    ('user3@example.com', @hash3, '2023-01-01T00:00:00Z'),
+                    ('user4@example.com', @hash4, '2023-01-01T00:00:00Z'),
+                    ('user5@example.com', @hash5, '2023-01-01T00:00:00Z'),
+                    ('user6@example.com', @hash6, '2023-01-01T00:00:00Z'),
+                    ('user7@example.com', @hash7, '2023-01-01T00:00:00Z'),
+                    ('user8@example.com', @hash8, '2023-01-01T00:00:00Z'),
+                    ('user9@example.com', @hash9, '2023-01-01T00:00:00Z'),
+                    ('user10@example.com', @hash10, '2023-01-01T00:00:00Z')
                     ", connection);
 
             for (int i = 1; i <= 10; i++)
@@ -170,18 +170,21 @@ public static class Program
         if (accountCount == 0)
         {
             var insertAccountsCommand = new NpgsqlCommand(@"
-                    INSERT INTO accounts (user_id, balance, currency) 
-                    VALUES 
-                    (1, 100.00, 'USD'),
-                    (2, 250.50, 'EUR'),
-                    (3, 500.00, 'GBP'),
-                    (4, 75.25, 'JPY'),
-                    (5, 1200.00, 'CAD'),
-                    (6, 300.75, 'AUD'),
-                    (7, 950.25, 'CHF'),
-                    (8, 425.00, 'SEK'),
-                    (9, 675.50, 'NOK'),
-                    (10, 800.00, 'DKK')
+                    INSERT INTO accounts (user_id, balance, currency)
+                    SELECT u.id, v.balance, v.currency
+                    FROM (VALUES
+                    ('user1@example.com', 100.00, 'USD'),
+                    ('user2@example.com', 250.50, 'EUR'),
+                    ('user3@example.com', 500.00, 'GBP'),
+                    ('user4@example.com', 75.25, 'JPY'),
+                    ('user5@example.com', 1200.00, 'CAD'),
+                    ('user6@example.com', 300.75, 'AUD'),
+                    ('user7@example.com', 950.25, 'CHF'),
+                    ('user8@example.com', 425.00, 'SEK'),
+                    ('user9@example.com', 675.50, 'NOK'),
+                    ('user10@example.com', 800.00, 'DKK')
+                    ) AS v(email, balance, currency)
+                    JOIN users u ON u.email = v.email
                     ", connection);
 
             await insertAccountsCommand.ExecuteNonQueryAsync();
