@@ -10,6 +10,7 @@ using Domain.Users;
 using Infrastructure.Account;
 using Infrastructure.Auth;
 using Infrastructure.Logging;
+using Infrastructure.Providers;
 using Infrastructure.User;
 
 namespace Api;
@@ -67,6 +68,7 @@ public static class Program
         builder.Services.AddScoped<CreateUserHandler>();
         builder.Services.AddScoped<AuthenticateHandler>();
         builder.Services.AddScoped<IAccountRepository, AccountRepository>();
+        builder.Services.AddSingleton<IProviderService, StubProviderService>();
         builder.Services.AddScoped<CreateAccountHandler>();
         builder.Services.AddScoped<DeleteAccountHandler>();
         builder.Services.AddScoped<GetAccountsByEmailHandler>();

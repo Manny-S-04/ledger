@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Infrastructure", "Infrastru
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ledger.Tests", "Ledger.Tests\Ledger.Tests.csproj", "{2A88762F-E324-42A9-B93C-E748174219AD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FakeProvider", "FakeProvider\FakeProvider.csproj", "{14A0ECEC-A625-4783-9B0A-8AF5A4DD0B41}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -37,5 +39,9 @@ Global
 		{2A88762F-E324-42A9-B93C-E748174219AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2A88762F-E324-42A9-B93C-E748174219AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2A88762F-E324-42A9-B93C-E748174219AD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{14A0ECEC-A625-4783-9B0A-8AF5A4DD0B41}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{14A0ECEC-A625-4783-9B0A-8AF5A4DD0B41}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{14A0ECEC-A625-4783-9B0A-8AF5A4DD0B41}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{14A0ECEC-A625-4783-9B0A-8AF5A4DD0B41}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
