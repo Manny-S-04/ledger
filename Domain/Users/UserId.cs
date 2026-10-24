@@ -8,4 +8,6 @@ public readonly record struct UserId
 
     public static UserId? TryCreate(int value)
         => value > 0 ? new UserId(value) : null;
+
+    public static bool Equals(UserId left, UserId right) => left.Value == right.Value;
 }

@@ -2,7 +2,7 @@ using Domain.Datatypes;
 
 namespace Domain.Accounts;
 
-public class Account
+public sealed class Account
 {
     public int Id { get; set; }
     // foriegn key into user table

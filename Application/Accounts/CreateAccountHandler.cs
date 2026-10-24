@@ -51,7 +51,8 @@ public class CreateAccountHandler
         }
 
         DateTime now = DateTime.UtcNow;
-        Account account = Account.Create(userId.Value.Value, Amount.Create(0m), currency, now, now);
+        Amount? amount = Amount.TryCreate(default);
+        Account account = Account.Create(userId.Value.Value, amount!.Value, currency, now, now);
 
         DbResult<Account> created = await _accountRepository.CreateAccountAsync(account);
         CreateAccountResult result = created switch

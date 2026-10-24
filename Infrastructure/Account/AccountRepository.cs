@@ -1,3 +1,4 @@
+using Application.Accounts;
 using Npgsql;
 using Application.Logging;
 using Microsoft.Extensions.Logging;
@@ -5,13 +6,15 @@ using Application.DbResult;
 using Application.Interfaces;
 using Domain.Users;
 using Domain.Datatypes;
+using Application.Providers;
+using Domain.Accounts;
 
 namespace Infrastructure.Account;
 
 public sealed class AccountRepository : IAccountRepository
 {
     private readonly NpgsqlDataSource _dataSource;
-    private readonly ILogger<AccountRepository> _logger;
+    private readonly ILogger<AccountRepository> _logger; 
 
     public AccountRepository(NpgsqlDataSource dataSource, ILogger<AccountRepository> logger)
     {
@@ -180,10 +183,17 @@ public sealed class AccountRepository : IAccountRepository
                     return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
                 }
 
+                Amount? amount = Amount.TryCreate(reader.GetDecimal(2));
+                if(amount is null) 
+                {
+                    _logger.Warn("Failed to generate correct amount");
+                    return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown); 
+                }
+                    
                 var account = Domain.Accounts.Account.Create(
                     reader.GetInt32(0),
                     reader.GetInt32(1),
-                    Amount.Create(reader.GetDecimal(2)),
+                    amount.Value,
                     currency,
                     reader.GetDateTime(4),
                     reader.GetDateTime(5)
@@ -238,10 +248,18 @@ public sealed class AccountRepository : IAccountRepository
                     return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
                 }
 
+                Amount? amount = Amount.TryCreate(reader.GetDecimal(2));
+                if(amount is null) 
+                {
+                    _logger.Warn("Failed to generate correct amount");
+                    return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown); 
+                }
+
+
                 var account = Domain.Accounts.Account.Create(
                     reader.GetInt32(0),
                     reader.GetInt32(1),
-                    Amount.Create(reader.GetDecimal(2)),
+                    amount.Value,
                     currency,
                     reader.GetDateTime(4),
                     reader.GetDateTime(5)
@@ -289,6 +307,182 @@ public sealed class AccountRepository : IAccountRepository
         {
             _logger.Error(ex, "failed");
             return new DbResult<bool>.Failure(DbError.Unknown);
+        }
+    }
+
+    // Applies a provider callback to the pending transaction it refers to. Only a row that is still pending
+    // changes; on Succeeded the amount stored on that row is credited, in the same DB transaction.
+    public async Task<DbResult<TopupCallbackOutcome>> TopUpAccountAsync(TransactionId transactionId, ProviderCallbackStatus status)
+    {
+        _logger.Info($"TopUpAccountAsync transactionId={transactionId.Value}, status={status}");
+        string newStatus = status == ProviderCallbackStatus.Succeeded ? "done" : "failed";
+        try
+        {
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlTransaction tx = await conn.BeginTransactionAsync();
+            DateTime now = DateTime.UtcNow;
+
+            int? accountId = null;
+            decimal storedAmount = 0m;
+            await using (NpgsqlCommand settle = new NpgsqlCommand(
+                "UPDATE account_transactions SET status = @status, updated_at = @updatedAt WHERE id = @id AND status = 'pending' RETURNING account_id, amount", conn, tx))
+            {
+                settle.Parameters.AddWithValue("@id", transactionId.Value);
+                settle.Parameters.AddWithValue("@status", newStatus);
+                settle.Parameters.AddWithValue("@updatedAt", now);
+                await using NpgsqlDataReader reader = await settle.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    accountId = reader.GetInt32(0);
+                    storedAmount = reader.GetDecimal(1);
+                }
+            }
+
+            if (accountId is null)
+            {
+                await tx.RollbackAsync();
+                return await NotPendingOutcomeAsync(conn, transactionId, status);
+            }
+
+            if (status == ProviderCallbackStatus.Failed)
+            {
+                await tx.CommitAsync();
+                _logger.Info("result=MarkedFailed");
+                return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.MarkedFailed);
+            }
+
+            await using NpgsqlCommand credit = new NpgsqlCommand(
+                "UPDATE accounts SET balance = balance + @amount, updated_at = @updatedAt WHERE id = @accountId", conn, tx);
+            credit.Parameters.AddWithValue("@accountId", accountId.Value);
+            credit.Parameters.AddWithValue("@amount", storedAmount);
+            credit.Parameters.AddWithValue("@updatedAt", now);
+            int credited = await credit.ExecuteNonQueryAsync();
+            if (credited != 1)
+            {
+                await tx.RollbackAsync();
+                _logger.Info("result=Failure(Unknown) - account row not updated");
+                return new DbResult<TopupCallbackOutcome>.Failure(DbError.Unknown);
+            }
+
+            await tx.CommitAsync();
+            _logger.Info("result=Credited");
+            return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.Credited);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "failed");
+            return new DbResult<TopupCallbackOutcome>.Failure(DbError.Unknown);
+        }
+    }
+
+    // The settle UPDATE changed nothing: the transaction doesn't exist, or it is no longer pending.
+    // Nothing goes back to the user for these; they are logged as warnings for the back end to look at.
+    private async Task<DbResult<TopupCallbackOutcome>> NotPendingOutcomeAsync(
+        NpgsqlConnection conn, TransactionId transactionId, ProviderCallbackStatus status)
+    {
+        await using NpgsqlCommand cmd = new NpgsqlCommand("SELECT status FROM account_transactions WHERE id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", transactionId.Value);
+        object? current = await cmd.ExecuteScalarAsync();
+        if (current is not string currentStatus)
+        {
+            _logger.Warn($"result=Failure(NotFound) transactionId={transactionId.Value}");
+            return new DbResult<TopupCallbackOutcome>.Failure(DbError.NotFound);
+        }
+
+        if (currentStatus == "expired" && status == ProviderCallbackStatus.Succeeded)
+        {
+            _logger.Warn($"result=LateSuccessOnExpired transactionId={transactionId.Value} - provider took the money after the top up expired");
+            return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.LateSuccessOnExpired);
+        }
+
+        _logger.Warn($"result=AlreadyProcessed transactionId={transactionId.Value} currentStatus={currentStatus} callbackStatus={status}");
+        return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.AlreadyProcessed);
+    }
+
+    public async Task<DbResult<int>> ExpireStalePendingAsync(DateTime createdBefore)
+    {
+        _logger.Info($"Expiring pending top ups created before {createdBefore:O}");
+        try
+        {
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlCommand cmd = new NpgsqlCommand(
+                "UPDATE account_transactions SET status = 'expired', updated_at = @updatedAt WHERE status = 'pending' AND created_at < @createdBefore", conn);
+            cmd.Parameters.AddWithValue("@createdBefore", createdBefore);
+            cmd.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
+            int expired = await cmd.ExecuteNonQueryAsync();
+            _logger.Info($"result=Success expired={expired}");
+            return new DbResult<int>.Success(expired);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "failed");
+            return new DbResult<int>.Failure(DbError.Unknown);
+        }
+    }
+
+    public async Task<DbResult<bool>> UpdateAccountBalance(Domain.Accounts.Account account)
+    {
+        _logger.Info($"Updating account balance for accountId={account.Id}");
+        try
+        {
+            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var cmd = new NpgsqlCommand(
+                "UPDATE accounts SET balance = @balance, updated_at = @updatedAt WHERE id = @id", conn);
+    
+            cmd.Parameters.AddWithValue("@id", account.Id);
+            cmd.Parameters.AddWithValue("@balance", account.Balance);
+            cmd.Parameters.AddWithValue("@updatedAt", account.UpdatedAt);
+    
+            var rowsAffected = await cmd.ExecuteNonQueryAsync();
+    
+            if (rowsAffected > 0)
+            {
+                _logger.Info("result=Success");
+                return new DbResult<bool>.Success(true);
+            }
+            else
+            {
+                _logger.Info("result=Failure(NotFound)");
+                return new DbResult<bool>.Failure(DbError.NotFound);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "failed");
+            return new DbResult<bool>.Failure(DbError.Unknown);
+        }
+    }
+
+    public async Task<DbResult<TransactionId>> RecordTopupAttempt(AccountId accountId, Amount amount, Currency currency)
+    {
+        _logger.Info($"Recording topup attempt for accountId={accountId.Value}, amount={amount}");
+        try
+        {
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlCommand cmd = new NpgsqlCommand(
+                "INSERT INTO account_transactions (account_id, amount, currency, created_at, updated_at, status) VALUES (@accountId, @amount, @currency, @createdAt, @updatedAt, @status) RETURNING id", conn);
+            DateTime now = DateTime.UtcNow;
+            cmd.Parameters.AddWithValue("@accountId", accountId.Value);
+            cmd.Parameters.AddWithValue("@amount", amount.Pence / 100m);
+            cmd.Parameters.AddWithValue("@currency", currency.Code);
+            cmd.Parameters.AddWithValue("@createdAt", now);
+            cmd.Parameters.AddWithValue("@updatedAt", now);
+            cmd.Parameters.AddWithValue("@status", "pending");
+
+            object? id = await cmd.ExecuteScalarAsync();
+            if (id is int rowId && TransactionId.TryCreate(rowId) is TransactionId transactionId)
+            {
+                _logger.Info($"result=Success transactionId={transactionId.Value}");
+                return new DbResult<TransactionId>.Success(transactionId);
+            }
+
+            _logger.Info("result=Failure(Unknown)");
+            return new DbResult<TransactionId>.Failure(DbError.Unknown);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "failed");
+            return new DbResult<TransactionId>.Failure(DbError.Unknown);
         }
     }
 }

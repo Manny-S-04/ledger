@@ -8,30 +8,23 @@ public readonly record struct Amount
 
     private Amount(long pence) => Pence = pence;
 
-    public static Amount Create(decimal pounds) =>
-        TryCreate(pounds, out var amount)
-            ? amount
-            : throw new ArgumentOutOfRangeException(
-                nameof(pounds),
-                "Amount must be zero or positive with at most 2 decimal places.");
-
-    public static bool TryCreate(decimal pounds, out Amount amount)
+    public static Amount? TryCreate(decimal pounds)
     {
-        amount = default;
-
         if (pounds < 0)
-            return false;
+            return null;
 
+        // Checked before scaling: pounds * 100 overflows decimal for very large values.
+        if (pounds > long.MaxValue / 100m)
+            return null;
         var scaled = pounds * 100m;
 
         if (scaled != decimal.Truncate(scaled))
-            return false;
+            return null;
 
         if (scaled > long.MaxValue)
-            return false;
+            return null;
 
-        amount = new Amount((long)scaled);
-        return true;
+        return new Amount((long)scaled);
     }
 
     public static Amount operator +(Amount left, Amount right) =>

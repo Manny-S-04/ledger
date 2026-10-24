@@ -1,3 +1,4 @@
+using Domain.Accounts;
 using Domain.Datatypes;
 
 namespace Application.Providers;
@@ -6,7 +7,7 @@ namespace Application.Providers;
 // Sequence: the provider's per-charge event counter, used to order callbacks (T-023.3 b).
 public sealed record ProviderCallback(
     string ProviderReference,
-    string Reference,
+    TransactionId Reference,
     ProviderCallbackStatus Status,
     ProviderFailureReason? FailureReason,
     Amount Amount,

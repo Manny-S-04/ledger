@@ -52,6 +52,12 @@ public static class Program
             builder.Configuration["Jwt:Key"]
             ?? throw new InvalidOperationException("Config 'Jwt:Key' is missing.");
         var jwtExpiryMinutes = builder.Configuration.GetValue("Jwt:ExpiryMinutes", 15);
+        string callbackSecret =
+            builder.Configuration["Provider:CallbackSecret"]
+            ?? throw new InvalidOperationException("Config 'Provider:CallbackSecret' is missing.");
+        TimeSpan callbackTolerance = TimeSpan.FromSeconds(builder.Configuration.GetValue("Provider:CallbackToleranceSeconds", 300));
+        TimeSpan auditInterval = TimeSpan.FromSeconds(builder.Configuration.GetValue("Topup:AuditIntervalSeconds", 60));
+        TimeSpan topupExpireAfter = TimeSpan.FromMinutes(builder.Configuration.GetValue("Topup:ExpireAfterMinutes", 30));
 
         builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         builder.Services.AddSingleton<ITokenService>(sp =>
@@ -73,6 +79,16 @@ public static class Program
         builder.Services.AddScoped<DeleteAccountHandler>();
         builder.Services.AddScoped<GetAccountsByEmailHandler>();
         builder.Services.AddScoped<GetAccountsByUserIdHandler>();
+        builder.Services.AddScoped<TopupAccountHandler>();
+        builder.Services.AddScoped<TopupAccountCallbackHandler>();
+        builder.Services.AddSingleton<ICallbackSignatureVerifier>(_ =>
+            new HmacCallbackSignatureVerifier(System.Text.Encoding.UTF8.GetBytes(callbackSecret), callbackTolerance, TimeProvider.System));
+        builder.Services.AddHostedService(sp =>
+            new Api.Background.AuditTransactionsService(
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                auditInterval,
+                topupExpireAfter,
+                sp.GetRequiredService<ILogger<Api.Background.AuditTransactionsService>>()));
         
         var app = builder.Build();
         app.Use(async (context, next) =>
@@ -135,6 +151,22 @@ public static class Program
                 CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES users(id),
                 CONSTRAINT uq_accounts_user_currency UNIQUE (user_id, currency)
             )",
+            @"
+            CREATE TABLE IF NOT EXISTS account_transactions (
+                id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                account_id INTEGER NOT NULL,
+                amount DECIMAL(15, 2) NOT NULL,
+                currency TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                status TEXT NOT NULL,
+                CONSTRAINT ck_account_transactions_status CHECK (status IN ('pending', 'done', 'failed', 'expired')),
+                CONSTRAINT fk_account_id FOREIGN KEY (account_id) REFERENCES accounts(id)
+            )",
+            // The expiry job only ever scans pending rows by age.
+            @"
+            CREATE INDEX IF NOT EXISTS ix_account_transactions_pending_created_at
+                ON account_transactions (created_at) WHERE status = 'pending'",
         };
 
         foreach (var commandText in commands)
@@ -146,11 +178,9 @@ public static class Program
         await SeedDb(dataSource, passwordHasher, logger);
     }
 
-    // Drops all tables on every startup so each run starts from a fresh, freshly-seeded schema
-    // (schema changes in InitDb's CREATE statements take effect without migrations).
     private static async Task ClearDb(NpgsqlConnection connection, ILogger logger)
     {
-        await using var command = new NpgsqlCommand("DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS users;", connection);
+        await using var command = new NpgsqlCommand("DROP TABLE IF EXISTS account_transactions; DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS users;", connection);
         await command.ExecuteNonQueryAsync();
         logger.Warn("ClearDb: dropped all tables (runs on every startup)");
     }

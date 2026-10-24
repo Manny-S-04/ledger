@@ -1,9 +1,11 @@
 using Application.DbResult;
+using Application.Interfaces;
 using Domain.Accounts;
 using Domain.Datatypes;
 using Domain.Users;
 using Infrastructure.Account;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Npgsql;
 
 namespace Ledger.Tests.Repositories;
@@ -34,7 +36,7 @@ public class AccountRepositoryTests : IAsyncLifetime
     private static UserId UserIdOf(int id) => global::Domain.Users.UserId.TryCreate(id)!.Value;
 
     private static Account NewAccount(int userId, string currency, decimal balance = 0m) =>
-        Account.Create(userId, Amount.Create(balance), Currency(currency), DateTime.UtcNow, DateTime.UtcNow);
+        Account.Create(userId, Amount.TryCreate(balance)!.Value, Currency(currency), DateTime.UtcNow, DateTime.UtcNow);
 
     // ---- CreateAccountAsync ----
 
@@ -295,7 +297,7 @@ public class AccountRepositoryTests : IAsyncLifetime
     public async Task UpdateAccountAsync_ExistingAccount_ReturnsTrueAndPersistsBalance()
     {
         int account = await _db.InsertAccountAsync(_userId, "GBP");
-        Account updated = Account.Create(account, _userId, Amount.Create(5m), Currency("GBP"), DateTime.UtcNow, DateTime.UtcNow);
+        Account updated = Account.Create(account, _userId, Amount.TryCreate(5m)!.Value, Currency("GBP"), DateTime.UtcNow, DateTime.UtcNow);
 
         DbResult<bool> result = await Repository().UpdateAccountAsync(updated);
 
@@ -306,7 +308,7 @@ public class AccountRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpdateAccountAsync_NoSuchAccount_ReturnsNotFound()
     {
-        Account missing = Account.Create(9999, _userId, Amount.Create(5m), Currency("GBP"), DateTime.UtcNow, DateTime.UtcNow);
+        Account missing = Account.Create(9999, _userId, Amount.TryCreate(5m)!.Value, Currency("GBP"), DateTime.UtcNow, DateTime.UtcNow);
 
         DbResult<bool> result = await Repository().UpdateAccountAsync(missing);
 

@@ -2,6 +2,9 @@ namespace Domain.Users;
 
 public sealed record Email
 {
+    // 254 is the maximum length of an address (T-018.1).
+    private const int MaxLength = 254;
+
     public string EmailAddress { get; }
 
     private Email(string emailAddress)
@@ -16,6 +19,8 @@ public sealed record Email
             return null;
 
         string normalized = Normalize(emailAddress);
+        if (normalized.Length > MaxLength)
+            return null;
 
         return IsValidFormat(normalized) ? new Email(normalized) : null;
     }

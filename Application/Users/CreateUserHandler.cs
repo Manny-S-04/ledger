@@ -36,7 +36,7 @@ public class CreateUserHandler
             return new CreateUserResult.InvalidPassword(passwordError ?? "Invalid password.");
         }
 
-        var exists = await _userRepository.Exists(email);
+        DbResult<bool> exists = await _userRepository.Exists(email);
 
         switch (exists)
         {

@@ -8,7 +8,7 @@ namespace Infrastructure.Providers;
 public sealed class StubProviderService : IProviderService
 {
     public Task<ProviderChargeResult> RequestChargeAsync(ProviderChargeRequest request, CancellationToken cancellationToken = default) =>
-        Task.FromResult<ProviderChargeResult>(new ProviderChargeResult.Accepted($"stub-{request.Reference}"));
+        Task.FromResult<ProviderChargeResult>(new ProviderChargeResult.Accepted($"stub-{request.Reference.Value}"));
 
     public Task<ProviderChargeStatus> GetChargeStatusAsync(string providerReference, CancellationToken cancellationToken = default) =>
         Task.FromResult<ProviderChargeStatus>(new ProviderChargeStatus.Processing());
