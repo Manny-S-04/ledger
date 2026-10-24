@@ -61,6 +61,11 @@ public sealed class AccountRepository : IAccountRepository
             _logger.Warn($"unique violation: {ex.ConstraintName}");
             return new DbResult<Domain.Accounts.Account>.Failure(DbError.ConstraintViolation);
         }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<Domain.Accounts.Account>.Failure(DbError.Unavailable);
+        }
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
@@ -82,6 +87,11 @@ public sealed class AccountRepository : IAccountRepository
             bool exists = await cmd.ExecuteScalarAsync() is true;
             _logger.Info($"result=Success exists={exists}");
             return new DbResult<bool>.Success(exists);
+        }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<bool>.Failure(DbError.Unavailable);
         }
         catch (Exception ex)
         {
@@ -121,6 +131,11 @@ public sealed class AccountRepository : IAccountRepository
             _logger.Info("result=Failure(NotFound)");
             return new DbResult<bool>.Failure(DbError.NotFound);
         }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<bool>.Failure(DbError.Unavailable);
+        }
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
@@ -153,6 +168,11 @@ public sealed class AccountRepository : IAccountRepository
 
             _logger.Info("result=Success");
             return new DbResult<UserId>.Success(ownerId.Value);
+        }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<UserId>.Failure(DbError.Unavailable);
         }
         catch (Exception ex)
         {
@@ -204,6 +224,11 @@ public sealed class AccountRepository : IAccountRepository
         
             _logger.Info($"result=Success count={accounts.Count}");
             return new DbResult<IEnumerable<Domain.Accounts.Account>>.Success(accounts);
+        }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unavailable);
         }
         catch (Exception ex)
         {
@@ -268,6 +293,11 @@ public sealed class AccountRepository : IAccountRepository
             }
             _logger.Info($"result=Success count={accounts.Count}");
             return new DbResult<IEnumerable<Domain.Accounts.Account>>.Success(accounts);
+        }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unavailable);
         }
         catch (Exception ex)
         {

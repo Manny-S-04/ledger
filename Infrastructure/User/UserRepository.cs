@@ -51,6 +51,11 @@ public sealed class UserRepository : IUserRepository
             _logger.Warn($"unique violation: {ex.ConstraintName}");
             return new DbResult<UserId>.Failure(DbError.ConstraintViolation);
         }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<UserId>.Failure(DbError.Unavailable);
+        }
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
@@ -77,6 +82,11 @@ public sealed class UserRepository : IUserRepository
 
             _logger.Info("result=Failure(Unknown)");
             return new DbResult<bool>.Failure(DbError.Unknown);
+        }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<bool>.Failure(DbError.Unavailable);
         }
         catch (Exception ex)
         {
@@ -117,6 +127,11 @@ public sealed class UserRepository : IUserRepository
 
             _logger.Info("result=Success");
             return new DbResult<Domain.Users.User>.Success(user);
+        }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<Domain.Users.User>.Failure(DbError.Unavailable);
         }
         catch (Exception ex)
         {
