@@ -214,7 +214,7 @@ public static class AccountEndpoints
         ILoggerFactory loggerFactory)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info($"Top up account request received for accountId={request.AccountId}, callerUserId={user.GetUserId()}");
+        logger.Info($"Top up account request received for accountId={request.AccountId}, callerUserId={user.GetUserId()}, amount={request.Amount}");
         
         if (UserId.TryCreate(user.GetUserId()) is not UserId parsedUserId)
         {
