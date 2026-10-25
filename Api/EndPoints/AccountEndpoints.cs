@@ -7,9 +7,7 @@ using System.Security.Claims;
 using Api.Auth;
 using Application.Accounts;
 using Domain.Accounts;
-
 using Application.Logging;
-using Application.DbResult;
 using Domain.Users;
 using Domain.Datatypes;
 
@@ -23,7 +21,6 @@ public static class AccountEndpoints
 
     private record TopUpAccountRequest(int AccountId, decimal Amount, string Currency);
 
-    // Mirrors the provider's callback payload (FakeProvider CallbackPayload). Only Reference and Status are used.
     private record TopUpAccountCallbackRequest(
         string? ProviderReference,
         string? Reference,
@@ -242,13 +239,8 @@ public static class AccountEndpoints
             logger.Info("result=InvalidCurrency status=400");
             return Results.BadRequest();
         }
-        
-        UserId userId = parsedUserId;
-        AccountId accountId = parsedAccountId;
-        Amount amount = parsedAmount;
-        Currency currency = parsedCurrency;
 
-        TopupAccountResult result = await handler.Handle(new TopupAccountCommand(userId, accountId, amount, currency));
+        TopupAccountResult result = await handler.Handle(new TopupAccountCommand(parsedUserId, parsedAccountId, parsedAmount, parsedCurrency));
 
         IResult response = result switch
         {

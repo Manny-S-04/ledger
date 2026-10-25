@@ -145,7 +145,7 @@ public sealed class AccountRepository : IAccountRepository
 
     public async Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId)
     {
-        _logger.Info($"Deleting accountId={accountId} (only if balance is 0)");
+        _logger.Info($"Getting account owner for accountId={accountId}");
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
@@ -171,7 +171,7 @@ public sealed class AccountRepository : IAccountRepository
         }
         catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
         {
-            _logger.Error(ex, "unavailable");
+            _logger.Error(ex, "db unavailable");
             return new DbResult<UserId>.Failure(DbError.Unavailable);
         }
         catch (Exception ex)

@@ -29,8 +29,8 @@ public class TopupAccountHandler
 
         switch(userIdResult) 
         {
-            case DbResult<UserId>.Failure { Error: DbError.NotFound }: return new TopupAccountResult.Failed("Account not found");
             case DbResult<UserId>.Success success: userId = success.Value; break;
+            case DbResult<UserId>.Failure { Error: DbError.NotFound }: return new TopupAccountResult.Failed("Account not found");
             default: return new TopupAccountResult.Failed("Failed to get account owner"); // perhaps bubble up the result error
         }
 
