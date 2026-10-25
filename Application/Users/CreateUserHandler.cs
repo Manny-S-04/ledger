@@ -59,6 +59,9 @@ public class CreateUserHandler
         CreateUserResult result = createUser switch
         {
             DbResult<UserId>.Success userId => new CreateUserResult.Created(userId.Value.Value),
+            // T-030: a concurrent sign-up with the same email passed the Exists check too and inserted
+            // first; the unique constraint on users.email rejects this insert.
+            DbResult<UserId>.Failure { Error: DbError.ConstraintViolation } => new CreateUserResult.AlreadyExists(),
             _ => new CreateUserResult.Failed()
         };
         _logger.Info($"result={result.GetType().Name}");

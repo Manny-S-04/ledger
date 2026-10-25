@@ -169,4 +169,29 @@ public class CreateUserHandlerTests
 
         Assert.IsType<CreateUserResult.AlreadyExists>(result);
     }
+
+    // T-030: lost the race - Exists said free, but a concurrent sign-up inserted the email first.
+    [Fact]
+    public async Task Handle_InsertHitsUniqueConstraint_ReturnsAlreadyExists()
+    {
+        _repository.Setup(r => r.Create(It.IsAny<User>()))
+            .ReturnsAsync(new DbResult<UserId>.Failure(DbError.ConstraintViolation));
+
+        CreateUserResult result = await Handle(ValidEmail, ValidPassword);
+
+        Assert.IsType<CreateUserResult.AlreadyExists>(result);
+    }
+
+    [Theory]
+    [InlineData(DbError.Unavailable)]
+    [InlineData(DbError.Unknown)]
+    public async Task Handle_InsertFailsForOtherReasons_ReturnsFailed(DbError error)
+    {
+        _repository.Setup(r => r.Create(It.IsAny<User>()))
+            .ReturnsAsync(new DbResult<UserId>.Failure(error));
+
+        CreateUserResult result = await Handle(ValidEmail, ValidPassword);
+
+        Assert.IsType<CreateUserResult.Failed>(result);
+    }
 }
