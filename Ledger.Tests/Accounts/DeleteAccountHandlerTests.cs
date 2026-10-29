@@ -18,11 +18,11 @@ public class DeleteAccountHandlerTests
 
     public DeleteAccountHandlerTests()
     {
-        _repository.Setup(r => r.GetAccountOwnerAsync(AccountId))
+        _repository.Setup(r => r.GetAccountOwnerAsync(AccountId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<UserId>.Success(UserId.TryCreate(OwnerId)!.Value));
-        _repository.Setup(r => r.GetAccountOwnerAsync(It.Is<int>(id => id != AccountId)))
+        _repository.Setup(r => r.GetAccountOwnerAsync(It.Is<int>(id => id != AccountId), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<UserId>.Failure(DbError.NotFound));
-        _repository.Setup(r => r.DeleteAccountAsync(AccountId))
+        _repository.Setup(r => r.DeleteAccountAsync(AccountId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Success(true));
     }
 
@@ -41,7 +41,7 @@ public class DeleteAccountHandlerTests
     [Fact]
     public async Task Handle_AccountWithBalance_ReturnsHasBalance()
     {
-        _repository.Setup(r => r.DeleteAccountAsync(AccountId))
+        _repository.Setup(r => r.DeleteAccountAsync(AccountId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Success(false));
 
         DeleteAccountResult result = await Handle(AccountId, OwnerId);
@@ -55,7 +55,7 @@ public class DeleteAccountHandlerTests
         DeleteAccountResult result = await Handle(AccountId, OtherUserId);
 
         Assert.IsType<DeleteAccountResult.Forbidden>(result);
-        _repository.Verify(r => r.DeleteAccountAsync(It.IsAny<int>()), Times.Never);
+        _repository.Verify(r => r.DeleteAccountAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Theory]
@@ -67,13 +67,13 @@ public class DeleteAccountHandlerTests
         DeleteAccountResult result = await Handle(accountId, OwnerId);
 
         Assert.IsType<DeleteAccountResult.NotFound>(result);
-        _repository.Verify(r => r.DeleteAccountAsync(It.IsAny<int>()), Times.Never);
+        _repository.Verify(r => r.DeleteAccountAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task Handle_AccountDeletedConcurrentlyAfterOwnerCheck_ReturnsNotFound()
     {
-        _repository.Setup(r => r.DeleteAccountAsync(AccountId))
+        _repository.Setup(r => r.DeleteAccountAsync(AccountId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Failure(DbError.NotFound));
 
         DeleteAccountResult result = await Handle(AccountId, OwnerId);

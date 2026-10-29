@@ -19,7 +19,7 @@ public class CreateUserHandler
         _passwordHasher = passwordHasher;
     }
     
-    public async Task<CreateUserResult> Handle(CreateUserCommand command)
+    public async Task<CreateUserResult> Handle(CreateUserCommand command, CancellationToken cancellationToken = default)
     {
         _logger.Info("Creating user");
         Email? email = Email.TryCreate(command.Email);
@@ -36,7 +36,7 @@ public class CreateUserHandler
             return new CreateUserResult.InvalidPassword(passwordError ?? "Invalid password.");
         }
 
-        DbResult<bool> exists = await _userRepository.Exists(email);
+        DbResult<bool> exists = await _userRepository.Exists(email, cancellationToken);
 
         switch (exists)
         {
@@ -55,7 +55,7 @@ public class CreateUserHandler
 
         var user = User.Create(email, password.Hash(_passwordHasher));
 
-        var createUser = await _userRepository.Create(user);
+        var createUser = await _userRepository.Create(user, cancellationToken);
         CreateUserResult result = createUser switch
         {
             DbResult<UserId>.Success userId => new CreateUserResult.Created(userId.Value.Value),

@@ -18,7 +18,7 @@ public class GetAccountsByUserIdHandler
         _accountRepository = accountRepository;
     }
 
-    public async Task<GetAccountsByUserIdResult> Handle(GetAccountsByUserIdQuery query)
+    public async Task<GetAccountsByUserIdResult> Handle(GetAccountsByUserIdQuery query, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Getting accounts for userId={query.UserId}");
         UserId? userId = UserId.TryCreate(query.UserId);
@@ -28,7 +28,7 @@ public class GetAccountsByUserIdHandler
             return new GetAccountsByUserIdResult.InvalidUserId();
         }
 
-        DbResult<IEnumerable<Account>> accounts = await _accountRepository.GetAccountsByUserIdAsync(userId.Value);
+        DbResult<IEnumerable<Account>> accounts = await _accountRepository.GetAccountsByUserIdAsync(userId.Value, cancellationToken);
         GetAccountsByUserIdResult result = accounts switch
         {
             DbResult<IEnumerable<Account>>.Success success => new GetAccountsByUserIdResult.Found(success.Value),

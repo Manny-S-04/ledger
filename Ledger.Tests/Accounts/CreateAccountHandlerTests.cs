@@ -17,10 +17,10 @@ public class CreateAccountHandlerTests
 
     public CreateAccountHandlerTests()
     {
-        _repository.Setup(r => r.AccountExistsAsync(It.IsAny<UserId>(), It.IsAny<Currency>()))
+        _repository.Setup(r => r.AccountExistsAsync(It.IsAny<UserId>(), It.IsAny<Currency>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Success(false));
-        _repository.Setup(r => r.CreateAccountAsync(It.IsAny<Account>()))
-            .ReturnsAsync((Account a) => new DbResult<Account>.Success(
+        _repository.Setup(r => r.CreateAccountAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Account a, CancellationToken _) => new DbResult<Account>.Success(
                 Account.Create(99, a.UserId, a.Balance, a.Currency, a.CreatedAt, a.UpdatedAt)));
     }
 
@@ -46,7 +46,7 @@ public class CreateAccountHandlerTests
     {
         await Handle(1, "GBP");
 
-        _repository.Verify(r => r.CreateAccountAsync(It.Is<Account>(a => a.Balance.Pence == 0)), Times.Once);
+        _repository.Verify(r => r.CreateAccountAsync(It.Is<Account>(a => a.Balance.Pence == 0), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]
@@ -70,7 +70,7 @@ public class CreateAccountHandlerTests
         CreateAccountResult result = await Handle(userId, "GBP");
 
         Assert.IsType<CreateAccountResult.InvalidUserId>(result);
-        _repository.Verify(r => r.CreateAccountAsync(It.IsAny<Account>()), Times.Never);
+        _repository.Verify(r => r.CreateAccountAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Theory]
@@ -91,7 +91,7 @@ public class CreateAccountHandlerTests
         CreateAccountResult result = await Handle(1, currency);
 
         Assert.IsType<CreateAccountResult.InvalidCurrency>(result);
-        _repository.Verify(r => r.CreateAccountAsync(It.IsAny<Account>()), Times.Never);
+        _repository.Verify(r => r.CreateAccountAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -108,20 +108,20 @@ public class CreateAccountHandlerTests
     public async Task Handle_UserAlreadyHasAccountInCurrency_ReturnsAlreadyExistsWithoutInserting()
     {
         _repository.Setup(r => r.AccountExistsAsync(
-                It.Is<UserId>(u => u.Value == 1), It.Is<Currency>(c => c.Code == "GBP")))
+                It.Is<UserId>(u => u.Value == 1), It.Is<Currency>(c => c.Code == "GBP"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Success(true));
 
         CreateAccountResult result = await Handle(1, "GBP");
 
         Assert.IsType<CreateAccountResult.AlreadyExists>(result);
-        _repository.Verify(r => r.CreateAccountAsync(It.IsAny<Account>()), Times.Never);
+        _repository.Verify(r => r.CreateAccountAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task Handle_ConcurrentDuplicateRejectedByUniqueConstraint_ReturnsAlreadyExists()
     {
         // The early check passed, but another request inserted the same currency first.
-        _repository.Setup(r => r.CreateAccountAsync(It.IsAny<Account>()))
+        _repository.Setup(r => r.CreateAccountAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<Account>.Failure(DbError.ConstraintViolation));
 
         CreateAccountResult result = await Handle(1, "GBP");
@@ -132,7 +132,7 @@ public class CreateAccountHandlerTests
     [Fact]
     public async Task Handle_UserHasAccountInOtherCurrency_StillCreatesNewCurrency()
     {
-        _repository.Setup(r => r.AccountExistsAsync(It.IsAny<UserId>(), It.Is<Currency>(c => c.Code == "EUR")))
+        _repository.Setup(r => r.AccountExistsAsync(It.IsAny<UserId>(), It.Is<Currency>(c => c.Code == "EUR"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Success(true));
 
         CreateAccountResult result = await Handle(1, "GBP");

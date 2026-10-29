@@ -20,9 +20,9 @@ public class CreateUserHandlerTests
     public CreateUserHandlerTests()
     {
         // Happy-path defaults; individual tests override what they need.
-        _repository.Setup(r => r.Exists(It.IsAny<Email>()))
+        _repository.Setup(r => r.Exists(It.IsAny<Email>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Success(false));
-        _repository.Setup(r => r.Create(It.IsAny<User>()))
+        _repository.Setup(r => r.Create(It.IsAny<User>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<UserId>.Success(UserId.TryCreate(42)!.Value));
         _hasher.Setup(h => h.Hash(It.IsAny<string>()))
             .Returns((string plain) => $"hashed:{plain}");
@@ -51,7 +51,7 @@ public class CreateUserHandlerTests
         await Handle(ValidEmail, ValidPassword);
 
         _repository.Verify(r => r.Create(It.Is<User>(u =>
-            u.PasswordHash == $"hashed:{ValidPassword}" && u.PasswordHash != ValidPassword)), Times.Once);
+            u.PasswordHash == $"hashed:{ValidPassword}" && u.PasswordHash != ValidPassword), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -59,8 +59,8 @@ public class CreateUserHandlerTests
     {
         await Handle("  New@Example.COM ", ValidPassword);
 
-        _repository.Verify(r => r.Exists(It.Is<Email>(e => e.EmailAddress == "new@example.com")), Times.Once);
-        _repository.Verify(r => r.Create(It.Is<User>(u => u.Email.EmailAddress == "new@example.com")), Times.Once);
+        _repository.Verify(r => r.Exists(It.Is<Email>(e => e.EmailAddress == "new@example.com"), It.IsAny<CancellationToken>()), Times.Once);
+        _repository.Verify(r => r.Create(It.Is<User>(u => u.Email.EmailAddress == "new@example.com"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ---- email validation ----
@@ -93,8 +93,8 @@ public class CreateUserHandlerTests
     {
         await Handle("not-an-email", ValidPassword);
 
-        _repository.Verify(r => r.Exists(It.IsAny<Email>()), Times.Never);
-        _repository.Verify(r => r.Create(It.IsAny<User>()), Times.Never);
+        _repository.Verify(r => r.Exists(It.IsAny<Email>(), It.IsAny<CancellationToken>()), Times.Never);
+        _repository.Verify(r => r.Create(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ---- password validation (3-8 characters, no character rules) ----
@@ -134,7 +134,7 @@ public class CreateUserHandlerTests
         await Handle(ValidEmail, "ab");
 
         _hasher.Verify(h => h.Hash(It.IsAny<string>()), Times.Never);
-        _repository.Verify(r => r.Create(It.IsAny<User>()), Times.Never);
+        _repository.Verify(r => r.Create(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -150,19 +150,19 @@ public class CreateUserHandlerTests
     [Fact]
     public async Task Handle_EmailAlreadyRegistered_ReturnsAlreadyExistsAndDoesNotCreate()
     {
-        _repository.Setup(r => r.Exists(It.IsAny<Email>()))
+        _repository.Setup(r => r.Exists(It.IsAny<Email>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Success(true));
 
         CreateUserResult result = await Handle(ValidEmail, ValidPassword);
 
         Assert.IsType<CreateUserResult.AlreadyExists>(result);
-        _repository.Verify(r => r.Create(It.IsAny<User>()), Times.Never);
+        _repository.Verify(r => r.Create(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task Handle_EmailRegisteredWithDifferentCase_ReturnsAlreadyExists()
     {
-        _repository.Setup(r => r.Exists(It.Is<Email>(e => e.EmailAddress == "taken@example.com")))
+        _repository.Setup(r => r.Exists(It.Is<Email>(e => e.EmailAddress == "taken@example.com"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<bool>.Success(true));
 
         CreateUserResult result = await Handle("TAKEN@Example.com", ValidPassword);

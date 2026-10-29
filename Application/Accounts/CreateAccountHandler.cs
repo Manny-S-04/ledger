@@ -19,7 +19,7 @@ public class CreateAccountHandler
         _accountRepository = accountRepository;
     }
 
-    public async Task<CreateAccountResult> Handle(CreateAccountCommand command)
+    public async Task<CreateAccountResult> Handle(CreateAccountCommand command, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Creating account for userId={command.UserId} currency={command.Currency}");
         UserId? userId = UserId.TryCreate(command.UserId);
@@ -37,7 +37,7 @@ public class CreateAccountHandler
         }
 
         // Friendly early check; the (user_id, currency) unique constraint is the real guarantee under concurrency.
-        DbResult<bool> exists = await _accountRepository.AccountExistsAsync(userId.Value, currency);
+        DbResult<bool> exists = await _accountRepository.AccountExistsAsync(userId.Value, currency, cancellationToken);
         switch (exists)
         {
             case DbResult<bool>.Success { Value: true }:
@@ -54,7 +54,7 @@ public class CreateAccountHandler
         Amount? amount = Amount.TryCreate(default);
         Account account = Account.Create(userId.Value.Value, amount!.Value, currency, now, now);
 
-        DbResult<Account> created = await _accountRepository.CreateAccountAsync(account);
+        DbResult<Account> created = await _accountRepository.CreateAccountAsync(account, cancellationToken);
         CreateAccountResult result = created switch
         {
             DbResult<Account>.Success success => new CreateAccountResult.Created(success.Value),

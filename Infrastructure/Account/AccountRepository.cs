@@ -22,12 +22,12 @@ public sealed class AccountRepository : IAccountRepository
         _logger = logger;
     }
 
-    public async Task<DbResult<Domain.Accounts.Account>> CreateAccountAsync(Domain.Accounts.Account account)
+    public async Task<DbResult<Domain.Accounts.Account>> CreateAccountAsync(Domain.Accounts.Account account, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Inserting account for userId={account.UserId}");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand(
                 "INSERT INTO accounts (user_id, balance, currency, created_at, updated_at) VALUES (@userId, @balance, @currency, @createdAt, @updatedAt) RETURNING id", conn);
         
@@ -37,7 +37,7 @@ public sealed class AccountRepository : IAccountRepository
             cmd.Parameters.AddWithValue("@createdAt", account.CreatedAt);
             cmd.Parameters.AddWithValue("@updatedAt", account.UpdatedAt);
         
-            object? id = await cmd.ExecuteScalarAsync();
+            object? id = await cmd.ExecuteScalarAsync(cancellationToken);
         
             if (id == null || id == DBNull.Value)
             {
@@ -73,18 +73,18 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<bool>> AccountExistsAsync(UserId userId, Domain.Datatypes.Currency currency)
+    public async Task<DbResult<bool>> AccountExistsAsync(UserId userId, Domain.Datatypes.Currency currency, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Checking for an existing account userId={userId.Value} currency={currency.Code}");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand(
                 "SELECT EXISTS(SELECT 1 FROM accounts WHERE user_id = @userId AND currency = @currency)", conn);
             cmd.Parameters.AddWithValue("@userId", userId.Value);
             cmd.Parameters.AddWithValue("@currency", currency.Code);
 
-            bool exists = await cmd.ExecuteScalarAsync() is true;
+            bool exists = await cmd.ExecuteScalarAsync(cancellationToken) is true;
             _logger.Info($"result=Success exists={exists}");
             return new DbResult<bool>.Success(exists);
         }
@@ -100,19 +100,19 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<bool>> DeleteAccountAsync(int accountId)
+    public async Task<DbResult<bool>> DeleteAccountAsync(int accountId, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Looking up owner of accountId={accountId}");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
 
             // Single statement: the balance check and the delete happen atomically under the row lock,
             // so a concurrent balance change can't slip in between them.
             await using var cmd = new NpgsqlCommand("DELETE FROM accounts WHERE id = @id AND balance = 0", conn);
             cmd.Parameters.AddWithValue("@id", accountId);
 
-            int rowsAffected = await cmd.ExecuteNonQueryAsync();
+            int rowsAffected = await cmd.ExecuteNonQueryAsync(cancellationToken);
             if (rowsAffected > 0)
             {
                 _logger.Info("result=Success(deleted)");
@@ -122,7 +122,7 @@ public sealed class AccountRepository : IAccountRepository
             // Nothing deleted: only to report why (balance > 0 vs. no such account).
             await using var existsCmd = new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM accounts WHERE id = @id)", conn);
             existsCmd.Parameters.AddWithValue("@id", accountId);
-            if (await existsCmd.ExecuteScalarAsync() is true)
+            if (await existsCmd.ExecuteScalarAsync(cancellationToken) is true)
             {
                 _logger.Info("result=Success(not deleted: balance > 0)");
                 return new DbResult<bool>.Success(false);
@@ -143,16 +143,16 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId)
+    public async Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Deleting accountId={accountId} (only if balance is 0)");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand("SELECT user_id FROM accounts WHERE id = @id", conn);
             cmd.Parameters.AddWithValue("@id", accountId);
 
-            object? ownerObj = await cmd.ExecuteScalarAsync();
+            object? ownerObj = await cmd.ExecuteScalarAsync(cancellationToken);
             if (ownerObj is not int owner)
             {
                 _logger.Info("result=Failure(NotFound)");
@@ -181,20 +181,20 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByUserIdAsync(UserId userId)
+    public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByUserIdAsync(UserId userId, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Loading accounts for userId={userId.Value}");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand("SELECT id, user_id, balance, currency, created_at, updated_at FROM accounts WHERE user_id = @userId", conn);
         
             cmd.Parameters.AddWithValue("@userId", userId.Value);
         
-            await using var reader = await cmd.ExecuteReaderAsync();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             var accounts = new List<Domain.Accounts.Account>();
         
-            while (await reader.ReadAsync())
+            while (await reader.ReadAsync(cancellationToken))
             {
                 Domain.Datatypes.Currency? currency = Domain.Datatypes.Currency.TryCreate(reader.GetString(3));
                 if (currency is null)
@@ -237,18 +237,18 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByEmailAsync(Email email)
+    public async Task<DbResult<IEnumerable<Domain.Accounts.Account>>> GetAccountsByEmailAsync(Email email, CancellationToken cancellationToken = default)
     {
         _logger.Info("Loading accounts by email");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
 
             await using var userCmd = new NpgsqlCommand(
                     "SELECT id FROM users WHERE email = @email", conn);
             userCmd.Parameters.AddWithValue("@email", email.EmailAddress);
 
-            var userIdObj = await userCmd.ExecuteScalarAsync();
+            var userIdObj = await userCmd.ExecuteScalarAsync(cancellationToken);
             if (userIdObj == null || userIdObj == DBNull.Value)
             {
                 _logger.Info("result=Failure(NotFound)");
@@ -261,10 +261,10 @@ public sealed class AccountRepository : IAccountRepository
                     "SELECT id, user_id, balance, currency, created_at, updated_at FROM accounts WHERE user_id = @userId", conn);
             accountCmd.Parameters.AddWithValue("@userId", userId);
 
-            await using var reader = await accountCmd.ExecuteReaderAsync();
+            await using var reader = await accountCmd.ExecuteReaderAsync(cancellationToken);
             var accounts = new List<Domain.Accounts.Account>();
 
-            while (await reader.ReadAsync())
+            while (await reader.ReadAsync(cancellationToken))
             {
                 Domain.Datatypes.Currency? currency = Domain.Datatypes.Currency.TryCreate(reader.GetString(3));
                 if (currency is null)
@@ -306,12 +306,12 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<bool>> UpdateAccountAsync(Domain.Accounts.Account account)
+    public async Task<DbResult<bool>> UpdateAccountAsync(Domain.Accounts.Account account, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Updating accountId={account.Id}");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand(
                 "UPDATE accounts SET balance = @balance, currency = @currency, updated_at = @updatedAt WHERE id = @id", conn);
     
@@ -320,7 +320,7 @@ public sealed class AccountRepository : IAccountRepository
             cmd.Parameters.AddWithValue("@currency", account.Currency.Code);
             cmd.Parameters.AddWithValue("@updatedAt", account.UpdatedAt);
     
-            var rowsAffected = await cmd.ExecuteNonQueryAsync();
+            var rowsAffected = await cmd.ExecuteNonQueryAsync(cancellationToken);
     
             if (rowsAffected > 0)
             {
@@ -342,14 +342,14 @@ public sealed class AccountRepository : IAccountRepository
 
     // Applies a provider callback to the pending transaction it refers to. Only a row that is still pending
     // changes; on Succeeded the amount stored on that row is credited, in the same DB transaction.
-    public async Task<DbResult<TopupCallbackOutcome>> TopUpAccountAsync(TransactionId transactionId, ProviderCallbackStatus status)
+    public async Task<DbResult<TopupCallbackOutcome>> TopUpAccountAsync(TransactionId transactionId, ProviderCallbackStatus status, CancellationToken cancellationToken = default)
     {
         _logger.Info($"TopUpAccountAsync transactionId={transactionId.Value}, status={status}");
         string newStatus = status == ProviderCallbackStatus.Succeeded ? "done" : "failed";
         try
         {
-            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
-            await using NpgsqlTransaction tx = await conn.BeginTransactionAsync();
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+            await using NpgsqlTransaction tx = await conn.BeginTransactionAsync(cancellationToken);
             DateTime now = DateTime.UtcNow;
 
             int? accountId = null;
@@ -360,8 +360,8 @@ public sealed class AccountRepository : IAccountRepository
                 settle.Parameters.AddWithValue("@id", transactionId.Value);
                 settle.Parameters.AddWithValue("@status", newStatus);
                 settle.Parameters.AddWithValue("@updatedAt", now);
-                await using NpgsqlDataReader reader = await settle.ExecuteReaderAsync();
-                if (await reader.ReadAsync())
+                await using NpgsqlDataReader reader = await settle.ExecuteReaderAsync(cancellationToken);
+                if (await reader.ReadAsync(cancellationToken))
                 {
                     accountId = reader.GetInt32(0);
                     storedAmount = reader.GetDecimal(1);
@@ -370,13 +370,13 @@ public sealed class AccountRepository : IAccountRepository
 
             if (accountId is null)
             {
-                await tx.RollbackAsync();
-                return await NotPendingOutcomeAsync(conn, transactionId, status);
+                await tx.RollbackAsync(cancellationToken);
+                return await NotPendingOutcomeAsync(conn, transactionId, status, cancellationToken);
             }
 
             if (status == ProviderCallbackStatus.Failed)
             {
-                await tx.CommitAsync();
+                await tx.CommitAsync(cancellationToken);
                 _logger.Info("result=MarkedFailed");
                 return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.MarkedFailed);
             }
@@ -386,15 +386,15 @@ public sealed class AccountRepository : IAccountRepository
             credit.Parameters.AddWithValue("@accountId", accountId.Value);
             credit.Parameters.AddWithValue("@amount", storedAmount);
             credit.Parameters.AddWithValue("@updatedAt", now);
-            int credited = await credit.ExecuteNonQueryAsync();
+            int credited = await credit.ExecuteNonQueryAsync(cancellationToken);
             if (credited != 1)
             {
-                await tx.RollbackAsync();
+                await tx.RollbackAsync(cancellationToken);
                 _logger.Info("result=Failure(Unknown) - account row not updated");
                 return new DbResult<TopupCallbackOutcome>.Failure(DbError.Unknown);
             }
 
-            await tx.CommitAsync();
+            await tx.CommitAsync(cancellationToken);
             _logger.Info("result=Credited");
             return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.Credited);
         }
@@ -408,11 +408,11 @@ public sealed class AccountRepository : IAccountRepository
     // The settle UPDATE changed nothing: the transaction doesn't exist, or it is no longer pending.
     // Nothing goes back to the user for these; they are logged as warnings for the back end to look at.
     private async Task<DbResult<TopupCallbackOutcome>> NotPendingOutcomeAsync(
-        NpgsqlConnection conn, TransactionId transactionId, ProviderCallbackStatus status)
+        NpgsqlConnection conn, TransactionId transactionId, ProviderCallbackStatus status, CancellationToken cancellationToken)
     {
         await using NpgsqlCommand cmd = new NpgsqlCommand("SELECT status FROM account_transactions WHERE id = @id", conn);
         cmd.Parameters.AddWithValue("@id", transactionId.Value);
-        object? current = await cmd.ExecuteScalarAsync();
+        object? current = await cmd.ExecuteScalarAsync(cancellationToken);
         if (current is not string currentStatus)
         {
             _logger.Warn($"result=Failure(NotFound) transactionId={transactionId.Value}");
@@ -429,17 +429,17 @@ public sealed class AccountRepository : IAccountRepository
         return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.AlreadyProcessed);
     }
 
-    public async Task<DbResult<int>> ExpireStalePendingAsync(DateTime createdBefore)
+    public async Task<DbResult<int>> ExpireStalePendingAsync(DateTime createdBefore, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Expiring pending top ups created before {createdBefore:O}");
         try
         {
-            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using NpgsqlCommand cmd = new NpgsqlCommand(
                 "UPDATE account_transactions SET status = 'expired', updated_at = @updatedAt WHERE status = 'pending' AND created_at < @createdBefore", conn);
             cmd.Parameters.AddWithValue("@createdBefore", createdBefore);
             cmd.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
-            int expired = await cmd.ExecuteNonQueryAsync();
+            int expired = await cmd.ExecuteNonQueryAsync(cancellationToken);
             _logger.Info($"result=Success expired={expired}");
             return new DbResult<int>.Success(expired);
         }
@@ -450,12 +450,12 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<bool>> UpdateAccountBalance(Domain.Accounts.Account account)
+    public async Task<DbResult<bool>> UpdateAccountBalance(Domain.Accounts.Account account, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Updating account balance for accountId={account.Id}");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand(
                 "UPDATE accounts SET balance = @balance, updated_at = @updatedAt WHERE id = @id", conn);
     
@@ -463,7 +463,7 @@ public sealed class AccountRepository : IAccountRepository
             cmd.Parameters.AddWithValue("@balance", account.Balance);
             cmd.Parameters.AddWithValue("@updatedAt", account.UpdatedAt);
     
-            var rowsAffected = await cmd.ExecuteNonQueryAsync();
+            var rowsAffected = await cmd.ExecuteNonQueryAsync(cancellationToken);
     
             if (rowsAffected > 0)
             {
@@ -483,12 +483,12 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<TransactionId>> RecordTopupAttempt(AccountId accountId, Amount amount, Currency currency)
+    public async Task<DbResult<TransactionId>> RecordTopupAttempt(AccountId accountId, Amount amount, Currency currency, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Recording topup attempt for accountId={accountId.Value}, amount={amount}");
         try
         {
-            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using NpgsqlCommand cmd = new NpgsqlCommand(
                 "INSERT INTO account_transactions (account_id, amount, currency, created_at, updated_at, status) VALUES (@accountId, @amount, @currency, @createdAt, @updatedAt, @status) RETURNING id", conn);
             DateTime now = DateTime.UtcNow;
@@ -499,7 +499,7 @@ public sealed class AccountRepository : IAccountRepository
             cmd.Parameters.AddWithValue("@updatedAt", now);
             cmd.Parameters.AddWithValue("@status", "pending");
 
-            object? id = await cmd.ExecuteScalarAsync();
+            object? id = await cmd.ExecuteScalarAsync(cancellationToken);
             if (id is int rowId && TransactionId.TryCreate(rowId) is TransactionId transactionId)
             {
                 _logger.Info($"result=Success transactionId={transactionId.Value}");

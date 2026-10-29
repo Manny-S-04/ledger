@@ -16,11 +16,11 @@ public sealed class TopupAccountCallbackHandler
         _logger = logger;
     }
 
-    public async Task<TopupAccountCallbackResult> Handle(TopupAccountCallbackCommand command)
+    public async Task<TopupAccountCallbackResult> Handle(TopupAccountCallbackCommand command, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Processing topup callback for transactionId={command.TransactionId.Value}, status={command.Status}");
 
-        DbResult<TopupCallbackOutcome> result = await _accountRepository.TopUpAccountAsync(command.TransactionId, command.Status);
+        DbResult<TopupCallbackOutcome> result = await _accountRepository.TopUpAccountAsync(command.TransactionId, command.Status, cancellationToken);
 
         TopupAccountCallbackResult response = result switch
         {

@@ -17,10 +17,10 @@ public class DeleteAccountHandler
         _accountRepository = accountRepository;
     }
 
-    public async Task<DeleteAccountResult> Handle(DeleteAccountCommand command)
+    public async Task<DeleteAccountResult> Handle(DeleteAccountCommand command, CancellationToken cancellationToken = default)
     {
         _logger.Info($"Deleting accountId={command.AccountId} requested by userId={command.RequestingUserId}");
-        DbResult<UserId> owner = await _accountRepository.GetAccountOwnerAsync(command.AccountId);
+        DbResult<UserId> owner = await _accountRepository.GetAccountOwnerAsync(command.AccountId, cancellationToken);
         switch (owner)
         {
             case DbResult<UserId>.Failure { Error: DbError.NotFound }:
@@ -36,7 +36,7 @@ public class DeleteAccountHandler
                 return new DeleteAccountResult.Failed();
         }
 
-        DbResult<bool> deleted = await _accountRepository.DeleteAccountAsync(command.AccountId);
+        DbResult<bool> deleted = await _accountRepository.DeleteAccountAsync(command.AccountId, cancellationToken);
         DeleteAccountResult result = deleted switch
         {
             DbResult<bool>.Success { Value: true } => new DeleteAccountResult.Deleted(),

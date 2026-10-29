@@ -25,7 +25,7 @@ public class AuthenticateHandler
         _tokenService = tokenService;
     }
 
-    public async Task<AuthenticateResult> Handle(AuthenticateCommand command)
+    public async Task<AuthenticateResult> Handle(AuthenticateCommand command, CancellationToken cancellationToken = default)
     {
         _logger.Info("Authenticating user");
         Email? email = Email.TryCreate(command.Email);
@@ -36,7 +36,7 @@ public class AuthenticateHandler
             return new AuthenticateResult.NotFound();
         }
 
-        DbResult<User> userResult = await _userRepository.GetUserByEmail(email);
+        DbResult<User> userResult = await _userRepository.GetUserByEmail(email, cancellationToken);
         switch (userResult)
         {
             case DbResult<User>.Failure { Error: DbError.NotFound }:
