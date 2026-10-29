@@ -5,6 +5,7 @@ using Domain.Accounts;
 using Domain.Datatypes;
 using Infrastructure.Account;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 
 namespace Ledger.Tests.Repositories;
 
@@ -44,6 +45,40 @@ public class TopupRepositoryTests : IAsyncLifetime
 
     private static TopupCallbackOutcome OutcomeOf(DbResult<TopupCallbackOutcome> result) =>
         Assert.IsType<DbResult<TopupCallbackOutcome>.Success>(result).Value;
+
+    private static AccountRepository UnreachableRepository() =>
+        new(NpgsqlDataSource.Create(DatabaseFixture.UnreachableConnectionString), NullLogger<AccountRepository>.Instance);
+
+    // ---- T-032: exception mapping ----
+
+    [Fact]
+    public async Task RecordTopupAttempt_DatabaseUnreachable_ReturnsUnavailable()
+    {
+        DbResult<TransactionId> result = await UnreachableRepository().RecordTopupAttempt(Account, Amount.TryCreate(1m)!.Value, Gbp);
+        Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<TransactionId>.Failure>(result).Error);
+    }
+
+    [Fact]
+    public async Task RecordTopupAttempt_NoSuchAccount_ReturnsUnknown()
+    {
+        AccountId missing = AccountId.TryCreate(_accountId + 1000)!.Value;
+        DbResult<TransactionId> result = await Repository().RecordTopupAttempt(missing, Amount.TryCreate(1m)!.Value, Gbp);
+        Assert.Equal(DbError.Unknown, Assert.IsType<DbResult<TransactionId>.Failure>(result).Error);
+    }
+
+    [Fact]
+    public async Task TopUpAccountAsync_DatabaseUnreachable_ReturnsUnavailable()
+    {
+        DbResult<TopupCallbackOutcome> result = await UnreachableRepository().TopUpAccountAsync(TransactionId.TryCreate(1)!.Value, ProviderCallbackStatus.Succeeded);
+        Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<TopupCallbackOutcome>.Failure>(result).Error);
+    }
+
+    [Fact]
+    public async Task ExpireStalePendingAsync_DatabaseUnreachable_ReturnsUnavailable()
+    {
+        DbResult<int> result = await UnreachableRepository().ExpireStalePendingAsync(DateTime.UtcNow);
+        Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<int>.Failure>(result).Error);
+    }
 
     // ---- RecordTopupAttempt ----
 

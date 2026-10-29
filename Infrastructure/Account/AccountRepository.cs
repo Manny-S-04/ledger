@@ -69,7 +69,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<Domain.Accounts.Account>.Failure(DbError.Unknown);
+            return new DbResult<Domain.Accounts.Account>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -96,7 +96,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<bool>.Failure(DbError.Unknown);
+            return new DbResult<bool>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -139,7 +139,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<bool>.Failure(DbError.Unknown);
+            return new DbResult<bool>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -177,7 +177,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<UserId>.Failure(DbError.Unknown);
+            return new DbResult<UserId>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -233,7 +233,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
+            return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -302,7 +302,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
+            return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -336,7 +336,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<bool>.Failure(DbError.Unknown);
+            return new DbResult<bool>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -401,7 +401,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<TopupCallbackOutcome>.Failure(DbError.Unknown);
+            return new DbResult<TopupCallbackOutcome>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -446,7 +446,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<int>.Failure(DbError.Unknown);
+            return new DbResult<int>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -479,7 +479,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<bool>.Failure(DbError.Unknown);
+            return new DbResult<bool>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -512,7 +512,7 @@ public sealed class AccountRepository : IAccountRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<TransactionId>.Failure(DbError.Unknown);
+            return new DbResult<TransactionId>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 }

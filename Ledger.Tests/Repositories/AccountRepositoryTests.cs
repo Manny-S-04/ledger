@@ -291,6 +291,22 @@ public class AccountRepositoryTests : IAsyncLifetime
         Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<bool>.Failure>(result).Error);
     }
 
+    // ---- T-032: exception mapping ----
+
+    [Fact]
+    public async Task UpdateAccountAsync_DatabaseUnreachable_ReturnsUnavailable()
+    {
+        DbResult<bool> result = await UnreachableRepository().UpdateAccountAsync(NewAccount(_userId, "GBP"));
+        Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<bool>.Failure>(result).Error);
+    }
+
+    [Fact]
+    public async Task UpdateAccountBalance_DatabaseUnreachable_ReturnsUnavailable()
+    {
+        DbResult<bool> result = await UnreachableRepository().UpdateAccountBalance(NewAccount(_userId, "GBP"));
+        Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<bool>.Failure>(result).Error);
+    }
+
     // ---- UpdateAccountAsync (currently unused by any handler) ----
 
     [Fact]
