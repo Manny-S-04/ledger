@@ -19,7 +19,8 @@ public static class AccountEndpoints
 
     private record CreateAccountRequest(string? Currency);
 
-    private record TopUpAccountRequest(int AccountId, decimal Amount, string Currency);
+    // TopupPence is decimal so a non-integer value reaches the endpoint and gets the "invalid amount" error.
+    private record TopUpAccountRequest(int AccountId, decimal TopupPence, string Currency);
 
     private record TopUpAccountCallbackRequest(
         string? ProviderReference,
@@ -33,7 +34,7 @@ public static class AccountEndpoints
     private record AccountResponse(
         int Id,
         int UserId,
-        string Balance,
+        long BalancePence,
         string Currency,
         DateTime CreatedAt,
         DateTime UpdatedAt)
@@ -41,7 +42,7 @@ public static class AccountEndpoints
         public static AccountResponse From(Account account) =>
             new(account.Id,
                 account.UserId,
-                account.Balance.ToString(),
+                account.Balance.Pence,
                 account.Currency.Code,
                 account.CreatedAt,
                 account.UpdatedAt);
@@ -214,7 +215,7 @@ public static class AccountEndpoints
         ILoggerFactory loggerFactory)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        logger.Info($"Top up account request received for accountId={request.AccountId}, callerUserId={user.GetUserId()}, amount={request.Amount}");
+        logger.Info($"Top up account request received for accountId={request.AccountId}, callerUserId={user.GetUserId()}, topupPence={request.TopupPence}");
         
         if (UserId.TryCreate(user.GetUserId()) is not UserId parsedUserId)
         {
@@ -228,10 +229,11 @@ public static class AccountEndpoints
             return Results.BadRequest();
         }
         
-        if (Amount.TryCreate(request.Amount) is not Amount parsedAmount)
+        if (request.TopupPence != decimal.Truncate(request.TopupPence)
+            || Amount.TryCreate(request.TopupPence / 100m) is not Amount parsedAmount)
         {
             logger.Info("result=InvalidAmount status=400");
-            return Results.BadRequest();
+            return Results.Problem(statusCode: 400, title: "invalid amount");
         }
         
         if (Currency.TryCreate(request.Currency) is not Currency parsedCurrency)
