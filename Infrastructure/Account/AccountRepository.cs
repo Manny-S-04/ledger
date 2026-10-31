@@ -32,7 +32,7 @@ public sealed class AccountRepository : IAccountRepository
                 "INSERT INTO accounts (user_id, balance, currency, created_at, updated_at) VALUES (@userId, @balance, @currency, @createdAt, @updatedAt) RETURNING id", conn);
         
             cmd.Parameters.AddWithValue("@userId", account.UserId);
-            cmd.Parameters.AddWithValue("@balance", account.Balance.Pence / 100m);
+            cmd.Parameters.AddWithValue("@balance", account.Balance.Pence);
             cmd.Parameters.AddWithValue("@currency", account.Currency.Code);
             cmd.Parameters.AddWithValue("@createdAt", account.CreatedAt);
             cmd.Parameters.AddWithValue("@updatedAt", account.UpdatedAt);
@@ -203,7 +203,7 @@ public sealed class AccountRepository : IAccountRepository
                     return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
                 }
 
-                Amount? amount = Amount.TryCreate(reader.GetDecimal(2));
+                Amount? amount = Amount.TryCreate(reader.GetInt64(2) / 100m);
                 if(amount is null) 
                 {
                     _logger.Warn("Failed to generate correct amount");
@@ -273,7 +273,7 @@ public sealed class AccountRepository : IAccountRepository
                     return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
                 }
 
-                Amount? amount = Amount.TryCreate(reader.GetDecimal(2));
+                Amount? amount = Amount.TryCreate(reader.GetInt64(2) / 100m);
                 if(amount is null) 
                 {
                     _logger.Warn("Failed to generate correct amount");
@@ -353,7 +353,7 @@ public sealed class AccountRepository : IAccountRepository
             DateTime now = DateTime.UtcNow;
 
             int? accountId = null;
-            decimal storedAmount = 0m;
+            long storedAmount = 0;
             await using (NpgsqlCommand settle = new NpgsqlCommand(
                 "UPDATE account_transactions SET status = @status, updated_at = @updatedAt WHERE id = @id AND status = 'pending' RETURNING account_id, amount", conn, tx))
             {
@@ -364,7 +364,7 @@ public sealed class AccountRepository : IAccountRepository
                 if (await reader.ReadAsync())
                 {
                     accountId = reader.GetInt32(0);
-                    storedAmount = reader.GetDecimal(1);
+                    storedAmount = reader.GetInt64(1);
                 }
             }
 
@@ -493,7 +493,7 @@ public sealed class AccountRepository : IAccountRepository
                 "INSERT INTO account_transactions (account_id, amount, currency, created_at, updated_at, status) VALUES (@accountId, @amount, @currency, @createdAt, @updatedAt, @status) RETURNING id", conn);
             DateTime now = DateTime.UtcNow;
             cmd.Parameters.AddWithValue("@accountId", accountId.Value);
-            cmd.Parameters.AddWithValue("@amount", amount.Pence / 100m);
+            cmd.Parameters.AddWithValue("@amount", amount.Pence);
             cmd.Parameters.AddWithValue("@currency", currency.Code);
             cmd.Parameters.AddWithValue("@createdAt", now);
             cmd.Parameters.AddWithValue("@updatedAt", now);

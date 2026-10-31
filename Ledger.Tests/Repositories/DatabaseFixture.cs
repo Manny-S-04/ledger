@@ -60,13 +60,13 @@ public sealed class DatabaseFixture : IAsyncLifetime
         return (int)(await cmd.ExecuteScalarAsync())!;
     }
 
-    public async Task<int> InsertAccountAsync(int userId, string currency, decimal balance = 0m)
+    public async Task<int> InsertAccountAsync(int userId, string currency, long balancePence = 0)
     {
         await using NpgsqlConnection conn = await DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new(
             "INSERT INTO accounts (user_id, balance, currency) VALUES (@userId, @balance, @currency) RETURNING id", conn);
         cmd.Parameters.AddWithValue("@userId", userId);
-        cmd.Parameters.AddWithValue("@balance", balance);
+        cmd.Parameters.AddWithValue("@balance", balancePence);
         cmd.Parameters.AddWithValue("@currency", currency);
         return (int)(await cmd.ExecuteScalarAsync())!;
     }

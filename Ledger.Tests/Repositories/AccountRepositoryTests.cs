@@ -47,7 +47,7 @@ public class AccountRepositoryTests : IAsyncLifetime
 
         Account created = Assert.IsType<DbResult<Account>.Success>(result).Value;
         Assert.True(created.Id > 0);
-        Assert.Equal(0m, await _db.ScalarAsync<decimal>($"SELECT balance FROM accounts WHERE id = {created.Id}"));
+        Assert.Equal(0L, await _db.ScalarAsync<long>($"SELECT balance FROM accounts WHERE id = {created.Id}"));
         Assert.Equal("GBP", await _db.ScalarAsync<string>($"SELECT currency FROM accounts WHERE id = {created.Id}"));
     }
 
@@ -145,10 +145,10 @@ public class AccountRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task GetAccountsByUserIdAsync_UserWithAccounts_ReturnsOnlyThatUsersAccountsWithBalances()
     {
-        int gbp = await _db.InsertAccountAsync(_userId, "GBP", 12.34m);
+        int gbp = await _db.InsertAccountAsync(_userId, "GBP", 1234);
         int eur = await _db.InsertAccountAsync(_userId, "EUR");
         int other = await _db.InsertUserAsync("other@example.com");
-        await _db.InsertAccountAsync(other, "GBP", 99m);
+        await _db.InsertAccountAsync(other, "GBP", 9900);
 
         DbResult<IEnumerable<Account>> result = await Repository().GetAccountsByUserIdAsync(UserIdOf(_userId));
 
@@ -263,16 +263,16 @@ public class AccountRepositoryTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData(0.01)]
-    [InlineData(100)]
-    public async Task DeleteAccountAsync_PositiveBalance_ReturnsFalseAndKeepsRowAndBalance(decimal balance)
+    [InlineData(1L)]
+    [InlineData(10000L)]
+    public async Task DeleteAccountAsync_PositiveBalance_ReturnsFalseAndKeepsRowAndBalance(long balancePence)
     {
-        int account = await _db.InsertAccountAsync(_userId, "GBP", balance);
+        int account = await _db.InsertAccountAsync(_userId, "GBP", balancePence);
 
         DbResult<bool> result = await Repository().DeleteAccountAsync(account);
 
         Assert.False(Assert.IsType<DbResult<bool>.Success>(result).Value);
-        Assert.Equal(balance, await _db.ScalarAsync<decimal>($"SELECT balance FROM accounts WHERE id = {account}"));
+        Assert.Equal(balancePence, await _db.ScalarAsync<long>($"SELECT balance FROM accounts WHERE id = {account}"));
     }
 
     [Fact]
