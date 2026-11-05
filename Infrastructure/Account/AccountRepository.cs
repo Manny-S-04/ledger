@@ -80,7 +80,7 @@ public sealed class AccountRepository : IAccountRepository
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
             await using var cmd = new NpgsqlCommand(
-                "SELECT EXISTS(SELECT 1 FROM accounts WHERE user_id = @userId AND currency = @currency)", conn);
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE user_id = @userId AND currency = @currency AND status = 'open')", conn);
             cmd.Parameters.AddWithValue("@userId", userId.Value);
             cmd.Parameters.AddWithValue("@currency", currency.Code);
 
@@ -100,46 +100,141 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<bool>> DeleteAccountAsync(int accountId)
+    private static AccountStatus? ParseStatus(string status) => status switch
     {
-        _logger.Info($"Looking up owner of accountId={accountId}");
+        "open" => AccountStatus.Open,
+        "closed" => AccountStatus.Closed,
+        _ => null
+    };
+
+    public async Task<DbResult<CloseBlockers>> GetCloseBlockersAsync(int accountId)
+    {
+        _logger.Info($"Reading close blockers for accountId={accountId}");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
-
-            // Single statement: the balance check and the delete happen atomically under the row lock,
-            // so a concurrent balance change can't slip in between them.
-            await using var cmd = new NpgsqlCommand("DELETE FROM accounts WHERE id = @id AND balance = 0", conn);
-            cmd.Parameters.AddWithValue("@id", accountId);
-
-            int rowsAffected = await cmd.ExecuteNonQueryAsync();
-            if (rowsAffected > 0)
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlCommand statusCmd = new NpgsqlCommand("SELECT status FROM accounts WHERE id = @id", conn);
+            statusCmd.Parameters.AddWithValue("@id", accountId);
+            if (await statusCmd.ExecuteScalarAsync() is not string status)
             {
-                _logger.Info("result=Success(deleted)");
-                return new DbResult<bool>.Success(true);
+                _logger.Info("result=Failure(NotFound)");
+                return new DbResult<CloseBlockers>.Failure(DbError.NotFound);
             }
 
-            // Nothing deleted: only to report why (balance > 0 vs. no such account).
-            await using var existsCmd = new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM accounts WHERE id = @id)", conn);
-            existsCmd.Parameters.AddWithValue("@id", accountId);
-            if (await existsCmd.ExecuteScalarAsync() is true)
+            bool hasPending = false;
+            List<ExpiredTopup> expired = new List<ExpiredTopup>();
+            await using NpgsqlCommand topupCmd = new NpgsqlCommand(
+                "SELECT id, status, provider_reference FROM account_transactions WHERE account_id = @id AND status IN ('pending', 'expired')", conn);
+            topupCmd.Parameters.AddWithValue("@id", accountId);
+            await using NpgsqlDataReader reader = await topupCmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
             {
-                _logger.Info("result=Success(not deleted: balance > 0)");
-                return new DbResult<bool>.Success(false);
+                if (reader.GetString(1) == "pending")
+                {
+                    hasPending = true;
+                    continue;
+                }
+
+                if (TransactionId.TryCreate(reader.GetInt32(0)) is not TransactionId id)
+                {
+                    _logger.Warn($"stored transaction id {reader.GetInt32(0)} is invalid");
+                    return new DbResult<CloseBlockers>.Failure(DbError.Unknown);
+                }
+                expired.Add(new ExpiredTopup(id, reader.IsDBNull(2) ? null : reader.GetString(2)));
             }
 
-            _logger.Info("result=Failure(NotFound)");
-            return new DbResult<bool>.Failure(DbError.NotFound);
+            _logger.Info($"result=Success status={status} hasPending={hasPending} expired={expired.Count}");
+            return new DbResult<CloseBlockers>.Success(new CloseBlockers(status == "closed", hasPending, expired));
         }
         catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
         {
             _logger.Error(ex, "unavailable");
-            return new DbResult<bool>.Failure(DbError.Unavailable);
+            return new DbResult<CloseBlockers>.Failure(DbError.Unavailable);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<bool>.Failure(DbError.Unknown);
+            return new DbResult<CloseBlockers>.Failure(DbError.Unknown);
+        }
+    }
+
+    // T-031.12: the account row is locked for the whole check-and-close, so a top-up start (which takes the
+    // same lock) either sees the account closed or is seen here as pending.
+    public async Task<DbResult<CloseAccountOutcome>> CloseAccountAsync(int accountId, IReadOnlySet<TransactionId> clearedExpired)
+    {
+        _logger.Info($"Closing accountId={accountId} clearedExpired={clearedExpired.Count}");
+        try
+        {
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlTransaction tx = await conn.BeginTransactionAsync();
+
+            string status;
+            long balance;
+            await using (NpgsqlCommand lockCmd = new NpgsqlCommand(
+                "SELECT status, balance FROM accounts WHERE id = @id FOR UPDATE", conn, tx))
+            {
+                lockCmd.Parameters.AddWithValue("@id", accountId);
+                await using NpgsqlDataReader reader = await lockCmd.ExecuteReaderAsync();
+                if (!await reader.ReadAsync())
+                {
+                    _logger.Info("result=Failure(NotFound)");
+                    return new DbResult<CloseAccountOutcome>.Failure(DbError.NotFound);
+                }
+                status = reader.GetString(0);
+                balance = reader.GetInt64(1);
+            }
+
+            if (status == "closed")
+            {
+                _logger.Info("result=AlreadyClosed");
+                return new DbResult<CloseAccountOutcome>.Success(CloseAccountOutcome.AlreadyClosed);
+            }
+
+            if (balance != 0)
+            {
+                _logger.Info("result=HasBalance");
+                return new DbResult<CloseAccountOutcome>.Success(CloseAccountOutcome.HasBalance);
+            }
+
+            await using (NpgsqlCommand topupCmd = new NpgsqlCommand(
+                "SELECT id, status FROM account_transactions WHERE account_id = @id AND status IN ('pending', 'expired')", conn, tx))
+            {
+                topupCmd.Parameters.AddWithValue("@id", accountId);
+                await using NpgsqlDataReader reader = await topupCmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    bool blocks = reader.GetString(1) == "pending"
+                        || TransactionId.TryCreate(reader.GetInt32(0)) is not TransactionId id
+                        || !clearedExpired.Contains(id);
+                    if (blocks)
+                    {
+                        _logger.Info($"result=PendingTopups transactionId={reader.GetInt32(0)}");
+                        return new DbResult<CloseAccountOutcome>.Success(CloseAccountOutcome.PendingTopups);
+                    }
+                }
+            }
+
+            await using (NpgsqlCommand closeCmd = new NpgsqlCommand(
+                "UPDATE accounts SET status = 'closed', closed_at = @now, updated_at = @now WHERE id = @id", conn, tx))
+            {
+                closeCmd.Parameters.AddWithValue("@id", accountId);
+                closeCmd.Parameters.AddWithValue("@now", DateTime.UtcNow);
+                await closeCmd.ExecuteNonQueryAsync();
+            }
+
+            await tx.CommitAsync();
+            _logger.Info("result=Closed");
+            return new DbResult<CloseAccountOutcome>.Success(CloseAccountOutcome.Closed);
+        }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<CloseAccountOutcome>.Failure(DbError.Unavailable);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "failed");
+            return new DbResult<CloseAccountOutcome>.Failure(DbError.Unknown);
         }
     }
 
@@ -187,7 +282,7 @@ public sealed class AccountRepository : IAccountRepository
         try
         {
             await using var conn = await _dataSource.OpenConnectionAsync();
-            await using var cmd = new NpgsqlCommand("SELECT id, user_id, balance, currency, created_at, updated_at FROM accounts WHERE user_id = @userId", conn);
+            await using var cmd = new NpgsqlCommand("SELECT id, user_id, balance, currency, created_at, updated_at, status, closed_at FROM accounts WHERE user_id = @userId", conn);
         
             cmd.Parameters.AddWithValue("@userId", userId.Value);
         
@@ -210,13 +305,22 @@ public sealed class AccountRepository : IAccountRepository
                     return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown); 
                 }
                     
+                AccountStatus? status = ParseStatus(reader.GetString(6));
+                if (status is null)
+                {
+                    _logger.Warn($"stored status for account {reader.GetInt32(0)} is invalid");
+                    return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
+                }
+
                 var account = Domain.Accounts.Account.Create(
                     reader.GetInt32(0),
                     reader.GetInt32(1),
                     amount.Value,
                     currency,
                     reader.GetDateTime(4),
-                    reader.GetDateTime(5)
+                    reader.GetDateTime(5),
+                    status.Value,
+                    reader.IsDBNull(7) ? null : reader.GetDateTime(7)
                 );
             
                 accounts.Add(account);
@@ -258,7 +362,7 @@ public sealed class AccountRepository : IAccountRepository
             var userId = (int)userIdObj;
 
             await using var accountCmd = new NpgsqlCommand(
-                    "SELECT id, user_id, balance, currency, created_at, updated_at FROM accounts WHERE user_id = @userId", conn);
+                    "SELECT id, user_id, balance, currency, created_at, updated_at, status, closed_at FROM accounts WHERE user_id = @userId", conn);
             accountCmd.Parameters.AddWithValue("@userId", userId);
 
             await using var reader = await accountCmd.ExecuteReaderAsync();
@@ -281,13 +385,22 @@ public sealed class AccountRepository : IAccountRepository
                 }
 
 
+                AccountStatus? status = ParseStatus(reader.GetString(6));
+                if (status is null)
+                {
+                    _logger.Warn($"stored status for account {reader.GetInt32(0)} is invalid");
+                    return new DbResult<IEnumerable<Domain.Accounts.Account>>.Failure(DbError.Unknown);
+                }
+
                 var account = Domain.Accounts.Account.Create(
                     reader.GetInt32(0),
                     reader.GetInt32(1),
                     amount.Value,
                     currency,
                     reader.GetDateTime(4),
-                    reader.GetDateTime(5)
+                    reader.GetDateTime(5),
+                    status.Value,
+                    reader.IsDBNull(7) ? null : reader.GetDateTime(7)
                 );
                 accounts.Add(account);
             }
@@ -483,14 +596,33 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    public async Task<DbResult<TransactionId>> RecordTopupAttempt(AccountId accountId, Amount amount, Currency currency)
+    // T-031.12: locks the account row and checks it is open before inserting the pending row, in one transaction.
+    public async Task<DbResult<RecordTopupOutcome>> RecordTopupAttempt(AccountId accountId, Amount amount, Currency currency)
     {
         _logger.Info($"Recording topup attempt for accountId={accountId.Value}, amount={amount}");
         try
         {
             await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlTransaction tx = await conn.BeginTransactionAsync();
+
+            await using (NpgsqlCommand lockCmd = new NpgsqlCommand("SELECT status FROM accounts WHERE id = @id FOR UPDATE", conn, tx))
+            {
+                lockCmd.Parameters.AddWithValue("@id", accountId.Value);
+                object? status = await lockCmd.ExecuteScalarAsync();
+                if (status is not string accountStatus)
+                {
+                    _logger.Info("result=Failure(NotFound)");
+                    return new DbResult<RecordTopupOutcome>.Failure(DbError.NotFound);
+                }
+                if (accountStatus == "closed")
+                {
+                    _logger.Info("result=AccountClosed");
+                    return new DbResult<RecordTopupOutcome>.Success(new RecordTopupOutcome.AccountClosed());
+                }
+            }
+
             await using NpgsqlCommand cmd = new NpgsqlCommand(
-                "INSERT INTO account_transactions (account_id, amount, currency, created_at, updated_at, status) VALUES (@accountId, @amount, @currency, @createdAt, @updatedAt, @status) RETURNING id", conn);
+                "INSERT INTO account_transactions (account_id, amount, currency, created_at, updated_at, status) VALUES (@accountId, @amount, @currency, @createdAt, @updatedAt, @status) RETURNING id", conn, tx);
             DateTime now = DateTime.UtcNow;
             cmd.Parameters.AddWithValue("@accountId", accountId.Value);
             cmd.Parameters.AddWithValue("@amount", amount.Pence);
@@ -502,17 +634,50 @@ public sealed class AccountRepository : IAccountRepository
             object? id = await cmd.ExecuteScalarAsync();
             if (id is int rowId && TransactionId.TryCreate(rowId) is TransactionId transactionId)
             {
+                await tx.CommitAsync();
                 _logger.Info($"result=Success transactionId={transactionId.Value}");
-                return new DbResult<TransactionId>.Success(transactionId);
+                return new DbResult<RecordTopupOutcome>.Success(new RecordTopupOutcome.Recorded(transactionId));
             }
 
             _logger.Info("result=Failure(Unknown)");
-            return new DbResult<TransactionId>.Failure(DbError.Unknown);
+            return new DbResult<RecordTopupOutcome>.Failure(DbError.Unknown);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<TransactionId>.Failure(DbError.Unknown);
+            return new DbResult<RecordTopupOutcome>.Failure(DbError.Unknown);
+        }
+    }
+
+    public async Task<DbResult<bool>> SetTopupProviderReferenceAsync(TransactionId transactionId, string providerReference)
+    {
+        _logger.Info($"Storing provider reference for transactionId={transactionId.Value}");
+        try
+        {
+            await using NpgsqlConnection conn = await _dataSource.OpenConnectionAsync();
+            await using NpgsqlCommand cmd = new NpgsqlCommand(
+                "UPDATE account_transactions SET provider_reference = @reference, updated_at = @updatedAt WHERE id = @id", conn);
+            cmd.Parameters.AddWithValue("@id", transactionId.Value);
+            cmd.Parameters.AddWithValue("@reference", providerReference);
+            cmd.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
+            if (await cmd.ExecuteNonQueryAsync() != 1)
+            {
+                _logger.Info("result=Failure(NotFound)");
+                return new DbResult<bool>.Failure(DbError.NotFound);
+            }
+
+            _logger.Info("result=Success");
+            return new DbResult<bool>.Success(true);
+        }
+        catch (Exception ex) when (NpgsqlErrors.IsUnavailable(ex))
+        {
+            _logger.Error(ex, "unavailable");
+            return new DbResult<bool>.Failure(DbError.Unavailable);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "failed");
+            return new DbResult<bool>.Failure(DbError.Unknown);
         }
     }
 }

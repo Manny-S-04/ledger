@@ -1,3 +1,4 @@
+using Application.Accounts;
 using Application.DbResult;
 using Application.Interfaces;
 using Domain.Accounts;
@@ -249,46 +250,199 @@ public class AccountRepositoryTests : IAsyncLifetime
         Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<UserId>.Failure>(result).Error);
     }
 
-    // ---- DeleteAccountAsync (deletes only when balance is 0) ----
+    // ---- Closing (T-031): GetCloseBlockersAsync, CloseAccountAsync ----
+
+    private static TransactionId Tx(int id) => TransactionId.TryCreate(id)!.Value;
+    private static readonly IReadOnlySet<TransactionId> NoneCleared = new HashSet<TransactionId>();
+
+    private static CloseAccountOutcome CloseOutcome(DbResult<CloseAccountOutcome> result) =>
+        Assert.IsType<DbResult<CloseAccountOutcome>.Success>(result).Value;
 
     [Fact]
-    public async Task DeleteAccountAsync_ZeroBalance_ReturnsTrueAndRemovesRow()
+    public async Task CloseAccountAsync_ZeroBalance_ClosesAndKeepsRowAndHistory()
     {
         int account = await _db.InsertAccountAsync(_userId, "GBP");
+        await _db.InsertTopupAsync(account, "done");
 
-        DbResult<bool> result = await Repository().DeleteAccountAsync(account);
+        CloseAccountOutcome outcome = CloseOutcome(await Repository().CloseAccountAsync(account, NoneCleared));
 
-        Assert.True(Assert.IsType<DbResult<bool>.Success>(result).Value);
-        Assert.Equal(0L, await _db.ScalarAsync<long>($"SELECT count(*) FROM accounts WHERE id = {account}"));
+        Assert.Equal(CloseAccountOutcome.Closed, outcome);
+        Assert.Equal("closed", await _db.ScalarAsync<string>($"SELECT status FROM accounts WHERE id = {account}"));
+        Assert.True(await _db.ScalarAsync<bool>($"SELECT closed_at IS NOT NULL FROM accounts WHERE id = {account}"));
+        Assert.Equal(1L, await _db.ScalarAsync<long>($"SELECT count(*) FROM account_transactions WHERE account_id = {account}"));
     }
 
     [Theory]
     [InlineData(1L)]
     [InlineData(10000L)]
-    public async Task DeleteAccountAsync_PositiveBalance_ReturnsFalseAndKeepsRowAndBalance(long balancePence)
+    public async Task CloseAccountAsync_PositiveBalance_ReturnsHasBalanceAndStaysOpen(long balancePence)
     {
         int account = await _db.InsertAccountAsync(_userId, "GBP", balancePence);
 
-        DbResult<bool> result = await Repository().DeleteAccountAsync(account);
-
-        Assert.False(Assert.IsType<DbResult<bool>.Success>(result).Value);
+        Assert.Equal(CloseAccountOutcome.HasBalance, CloseOutcome(await Repository().CloseAccountAsync(account, NoneCleared)));
+        Assert.Equal("open", await _db.ScalarAsync<string>($"SELECT status FROM accounts WHERE id = {account}"));
         Assert.Equal(balancePence, await _db.ScalarAsync<long>($"SELECT balance FROM accounts WHERE id = {account}"));
     }
 
     [Fact]
-    public async Task DeleteAccountAsync_NoSuchAccount_ReturnsNotFound()
+    public async Task CloseAccountAsync_AlreadyClosed_ReturnsAlreadyClosedAndKeepsClosedAt()
     {
-        DbResult<bool> result = await Repository().DeleteAccountAsync(9999);
+        int account = await _db.InsertAccountAsync(_userId, "GBP");
+        await Repository().CloseAccountAsync(account, NoneCleared);
+        DateTime closedAt = await _db.ScalarAsync<DateTime>($"SELECT closed_at FROM accounts WHERE id = {account}");
 
-        Assert.Equal(DbError.NotFound, Assert.IsType<DbResult<bool>.Failure>(result).Error);
+        Assert.Equal(CloseAccountOutcome.AlreadyClosed, CloseOutcome(await Repository().CloseAccountAsync(account, NoneCleared)));
+        Assert.Equal(closedAt, await _db.ScalarAsync<DateTime>($"SELECT closed_at FROM accounts WHERE id = {account}"));
     }
 
     [Fact]
-    public async Task DeleteAccountAsync_DatabaseUnreachable_ReturnsUnavailable()
+    public async Task CloseAccountAsync_PendingTopup_ReturnsPendingTopupsAndStaysOpen()
     {
-        DbResult<bool> result = await UnreachableRepository().DeleteAccountAsync(1);
+        int account = await _db.InsertAccountAsync(_userId, "GBP");
+        await _db.InsertTopupAsync(account, "pending", "ch_1");
 
-        Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<bool>.Failure>(result).Error);
+        Assert.Equal(CloseAccountOutcome.PendingTopups, CloseOutcome(await Repository().CloseAccountAsync(account, NoneCleared)));
+        Assert.Equal("open", await _db.ScalarAsync<string>($"SELECT status FROM accounts WHERE id = {account}"));
+    }
+
+    [Fact]
+    public async Task CloseAccountAsync_ExpiredTopupNotCleared_ReturnsPendingTopups()
+    {
+        int account = await _db.InsertAccountAsync(_userId, "GBP");
+        int cleared = await _db.InsertTopupAsync(account, "expired", "ch_1");
+        await _db.InsertTopupAsync(account, "expired", "ch_2");
+
+        HashSet<TransactionId> clearedSet = new HashSet<TransactionId> { Tx(cleared) };
+        Assert.Equal(CloseAccountOutcome.PendingTopups, CloseOutcome(await Repository().CloseAccountAsync(account, clearedSet)));
+    }
+
+    [Fact]
+    public async Task CloseAccountAsync_AllExpiredTopupsCleared_Closes()
+    {
+        int account = await _db.InsertAccountAsync(_userId, "GBP");
+        int first = await _db.InsertTopupAsync(account, "expired", "ch_1");
+        int second = await _db.InsertTopupAsync(account, "expired", "ch_2");
+
+        HashSet<TransactionId> clearedSet = new HashSet<TransactionId> { Tx(first), Tx(second) };
+        Assert.Equal(CloseAccountOutcome.Closed, CloseOutcome(await Repository().CloseAccountAsync(account, clearedSet)));
+    }
+
+    [Fact]
+    public async Task CloseAccountAsync_NoSuchAccount_ReturnsNotFound()
+    {
+        DbResult<CloseAccountOutcome> result = await Repository().CloseAccountAsync(9999, NoneCleared);
+
+        Assert.Equal(DbError.NotFound, Assert.IsType<DbResult<CloseAccountOutcome>.Failure>(result).Error);
+    }
+
+    [Fact]
+    public async Task CloseAccountAsync_DatabaseUnreachable_ReturnsUnavailable()
+    {
+        DbResult<CloseAccountOutcome> result = await UnreachableRepository().CloseAccountAsync(1, NoneCleared);
+
+        Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<CloseAccountOutcome>.Failure>(result).Error);
+    }
+
+    [Fact]
+    public async Task GetCloseBlockersAsync_ReportsPendingAndExpiredWithReferences()
+    {
+        int account = await _db.InsertAccountAsync(_userId, "GBP");
+        await _db.InsertTopupAsync(account, "pending", "ch_1");
+        int expiredWithRef = await _db.InsertTopupAsync(account, "expired", "ch_2");
+        int expiredNoRef = await _db.InsertTopupAsync(account, "expired");
+        await _db.InsertTopupAsync(account, "done", "ch_4");
+        await _db.InsertTopupAsync(account, "failed", "ch_5");
+
+        CloseBlockers blockers = Assert.IsType<DbResult<CloseBlockers>.Success>(await Repository().GetCloseBlockersAsync(account)).Value;
+
+        Assert.False(blockers.AlreadyClosed);
+        Assert.True(blockers.HasPending);
+        Assert.Equal(2, blockers.Expired.Count);
+        Assert.Contains(new ExpiredTopup(Tx(expiredWithRef), "ch_2"), blockers.Expired);
+        Assert.Contains(new ExpiredTopup(Tx(expiredNoRef), null), blockers.Expired);
+    }
+
+    [Fact]
+    public async Task GetCloseBlockersAsync_ClosedAccount_ReportsAlreadyClosed()
+    {
+        int account = await _db.InsertAccountAsync(_userId, "GBP");
+        await Repository().CloseAccountAsync(account, NoneCleared);
+
+        CloseBlockers blockers = Assert.IsType<DbResult<CloseBlockers>.Success>(await Repository().GetCloseBlockersAsync(account)).Value;
+
+        Assert.True(blockers.AlreadyClosed);
+    }
+
+    [Fact]
+    public async Task GetCloseBlockersAsync_NoSuchAccount_ReturnsNotFound()
+    {
+        DbResult<CloseBlockers> result = await Repository().GetCloseBlockersAsync(9999);
+
+        Assert.Equal(DbError.NotFound, Assert.IsType<DbResult<CloseBlockers>.Failure>(result).Error);
+    }
+
+    [Fact]
+    public async Task ClosedAccount_SameCurrencyCanBeOpenedAgain()
+    {
+        int account = await _db.InsertAccountAsync(_userId, "GBP");
+        await Repository().CloseAccountAsync(account, NoneCleared);
+
+        DbResult<bool> exists = await Repository().AccountExistsAsync(UserIdOf(_userId), Currency("GBP"));
+        DbResult<Account> created = await Repository().CreateAccountAsync(NewAccount(_userId, "GBP"));
+
+        Assert.False(Assert.IsType<DbResult<bool>.Success>(exists).Value);
+        Assert.IsType<DbResult<Account>.Success>(created);
+    }
+
+    [Fact]
+    public async Task GetAccountsByUserIdAsync_ClosedAccountListedWithStatusAndClosedAt()
+    {
+        int closed = await _db.InsertAccountAsync(_userId, "GBP");
+        int open = await _db.InsertAccountAsync(_userId, "EUR");
+        await Repository().CloseAccountAsync(closed, NoneCleared);
+
+        DbResult<IEnumerable<Account>> result = await Repository().GetAccountsByUserIdAsync(UserIdOf(_userId));
+
+        List<Account> accounts = Assert.IsType<DbResult<IEnumerable<Account>>.Success>(result).Value.ToList();
+        Account closedAccount = accounts.Single(a => a.Id == closed);
+        Account openAccount = accounts.Single(a => a.Id == open);
+        Assert.Equal(AccountStatus.Closed, closedAccount.Status);
+        Assert.NotNull(closedAccount.ClosedAt);
+        Assert.Equal(AccountStatus.Open, openAccount.Status);
+        Assert.Null(openAccount.ClosedAt);
+    }
+
+    // T-031.12: close and top-up start race on the same account; exactly one of them wins.
+    [Fact]
+    public async Task CloseAndTopupStartConcurrently_EitherClosedWithNoTopupOrOpenWithPendingTopup()
+    {
+        Currency gbp = Currency("GBP");
+        for (int i = 0; i < 25; i++)
+        {
+            await _db.ResetAsync();
+            int user = await _db.InsertUserAsync($"race{i}@example.com");
+            int account = await _db.InsertAccountAsync(user, "GBP");
+            AccountRepository repository = Repository();
+
+            Task<DbResult<CloseAccountOutcome>> close = repository.CloseAccountAsync(account, NoneCleared);
+            Task<DbResult<RecordTopupOutcome>> topup = repository.RecordTopupAttempt(AccountId.TryCreate(account)!.Value, Amount.TryCreate(1m)!.Value, gbp);
+            await Task.WhenAll(close, topup);
+
+            CloseAccountOutcome closeOutcome = CloseOutcome(await close);
+            RecordTopupOutcome topupOutcome = Assert.IsType<DbResult<RecordTopupOutcome>.Success>(await topup).Value;
+            long pending = await _db.ScalarAsync<long>($"SELECT count(*) FROM account_transactions WHERE account_id = {account}");
+            if (closeOutcome == CloseAccountOutcome.Closed)
+            {
+                Assert.IsType<RecordTopupOutcome.AccountClosed>(topupOutcome);
+                Assert.Equal(0L, pending);
+            }
+            else
+            {
+                Assert.Equal(CloseAccountOutcome.PendingTopups, closeOutcome);
+                Assert.IsType<RecordTopupOutcome.Recorded>(topupOutcome);
+                Assert.Equal(1L, pending);
+            }
+        }
     }
 
     // ---- UpdateAccountAsync (currently unused by any handler) ----

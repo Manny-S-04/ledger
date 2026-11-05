@@ -1,13 +1,15 @@
 using Application.Accounts;
 using Application.DbResult;
 using Application.Interfaces;
+using Application.Providers;
+using Domain.Accounts;
 using Domain.Users;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace Ledger.Tests.Accounts;
 
-// DeleteAccountHandler. Repository mocked; covers user-facing outcomes, not DB failures (T-016).
+// DeleteAccountHandler closes the account (T-031). Repository and provider mocked.
 public class DeleteAccountHandlerTests
 {
     private const int AccountId = 5;
@@ -15,6 +17,7 @@ public class DeleteAccountHandlerTests
     private const int OtherUserId = 2;
 
     private readonly Mock<IAccountRepository> _repository = new();
+    private readonly Mock<IProviderService> _provider = new();
 
     public DeleteAccountHandlerTests()
     {
@@ -22,62 +25,156 @@ public class DeleteAccountHandlerTests
             .ReturnsAsync(new DbResult<UserId>.Success(UserId.TryCreate(OwnerId)!.Value));
         _repository.Setup(r => r.GetAccountOwnerAsync(It.Is<int>(id => id != AccountId)))
             .ReturnsAsync(new DbResult<UserId>.Failure(DbError.NotFound));
-        _repository.Setup(r => r.DeleteAccountAsync(AccountId))
-            .ReturnsAsync(new DbResult<bool>.Success(true));
+        Blockers(new CloseBlockers(false, false, Array.Empty<ExpiredTopup>()));
+        _repository.Setup(r => r.CloseAccountAsync(AccountId, It.IsAny<IReadOnlySet<TransactionId>>()))
+            .ReturnsAsync(new DbResult<CloseAccountOutcome>.Success(CloseAccountOutcome.Closed));
     }
 
+    private void Blockers(CloseBlockers blockers) =>
+        _repository.Setup(r => r.GetCloseBlockersAsync(AccountId))
+            .ReturnsAsync(new DbResult<CloseBlockers>.Success(blockers));
+
+    private static TransactionId Tx(int id) => TransactionId.TryCreate(id)!.Value;
+
+    private void ProviderSays(string reference, ProviderChargeStatus status) =>
+        _provider.Setup(p => p.GetChargeStatusAsync(reference, It.IsAny<CancellationToken>())).ReturnsAsync(status);
+
     private Task<DeleteAccountResult> Handle(int accountId, int requestingUserId) =>
-        new DeleteAccountHandler(_repository.Object, NullLogger<DeleteAccountHandler>.Instance)
+        new DeleteAccountHandler(_repository.Object, _provider.Object, NullLogger<DeleteAccountHandler>.Instance)
             .Handle(new DeleteAccountCommand(accountId, requestingUserId));
 
+    private void VerifyNeverClosed() =>
+        _repository.Verify(r => r.CloseAccountAsync(It.IsAny<int>(), It.IsAny<IReadOnlySet<TransactionId>>()), Times.Never);
+
     [Fact]
-    public async Task Handle_OwnerDeletesEmptyAccount_ReturnsDeleted()
+    public async Task Handle_OwnerClosesEmptyAccount_ReturnsClosed()
     {
         DeleteAccountResult result = await Handle(AccountId, OwnerId);
 
-        Assert.IsType<DeleteAccountResult.Deleted>(result);
+        Assert.IsType<DeleteAccountResult.Closed>(result);
+    }
+
+    [Fact]
+    public async Task Handle_AlreadyClosed_ReturnsClosedWithoutAskingProviderOrClosingAgain()
+    {
+        Blockers(new CloseBlockers(true, false, new[] { new ExpiredTopup(Tx(3), "ch_3") }));
+
+        DeleteAccountResult result = await Handle(AccountId, OwnerId);
+
+        Assert.IsType<DeleteAccountResult.Closed>(result);
+        _provider.VerifyNoOtherCalls();
+        VerifyNeverClosed();
+    }
+
+    [Fact]
+    public async Task Handle_CloseTransactionSeesAlreadyClosed_ReturnsClosed()
+    {
+        _repository.Setup(r => r.CloseAccountAsync(AccountId, It.IsAny<IReadOnlySet<TransactionId>>()))
+            .ReturnsAsync(new DbResult<CloseAccountOutcome>.Success(CloseAccountOutcome.AlreadyClosed));
+
+        Assert.IsType<DeleteAccountResult.Closed>(await Handle(AccountId, OwnerId));
     }
 
     [Fact]
     public async Task Handle_AccountWithBalance_ReturnsHasBalance()
     {
-        _repository.Setup(r => r.DeleteAccountAsync(AccountId))
-            .ReturnsAsync(new DbResult<bool>.Success(false));
+        _repository.Setup(r => r.CloseAccountAsync(AccountId, It.IsAny<IReadOnlySet<TransactionId>>()))
+            .ReturnsAsync(new DbResult<CloseAccountOutcome>.Success(CloseAccountOutcome.HasBalance));
 
-        DeleteAccountResult result = await Handle(AccountId, OwnerId);
-
-        Assert.IsType<DeleteAccountResult.HasBalance>(result);
+        Assert.IsType<DeleteAccountResult.HasBalance>(await Handle(AccountId, OwnerId));
     }
 
     [Fact]
-    public async Task Handle_SomeoneElsesAccount_ReturnsForbiddenAndNeverDeletes()
+    public async Task Handle_PendingTopup_ReturnsPendingTopupsWithoutAskingProvider()
+    {
+        Blockers(new CloseBlockers(false, true, Array.Empty<ExpiredTopup>()));
+
+        Assert.IsType<DeleteAccountResult.PendingTopups>(await Handle(AccountId, OwnerId));
+        _provider.VerifyNoOtherCalls();
+        VerifyNeverClosed();
+    }
+
+    [Theory]
+    [InlineData("processing")]
+    [InlineData("succeeded")]
+    public async Task Handle_ExpiredTopupProviderMayStillPay_ReturnsPendingTopups(string providerStatus)
+    {
+        Blockers(new CloseBlockers(false, false, new[] { new ExpiredTopup(Tx(3), "ch_3") }));
+        ProviderSays("ch_3", providerStatus == "processing"
+            ? new ProviderChargeStatus.Processing()
+            : new ProviderChargeStatus.Succeeded());
+
+        Assert.IsType<DeleteAccountResult.PendingTopups>(await Handle(AccountId, OwnerId));
+        VerifyNeverClosed();
+    }
+
+    [Fact]
+    public async Task Handle_ExpiredTopupsProviderFailedOrNotFound_ClosesWithThoseCleared()
+    {
+        Blockers(new CloseBlockers(false, false, new[] { new ExpiredTopup(Tx(3), "ch_3"), new ExpiredTopup(Tx(4), "ch_4") }));
+        ProviderSays("ch_3", new ProviderChargeStatus.Failed(default));
+        ProviderSays("ch_4", new ProviderChargeStatus.NotFound());
+
+        Assert.IsType<DeleteAccountResult.Closed>(await Handle(AccountId, OwnerId));
+        _repository.Verify(r => r.CloseAccountAsync(AccountId,
+            It.Is<IReadOnlySet<TransactionId>>(s => s.Count == 2 && s.Contains(Tx(3)) && s.Contains(Tx(4)))), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ExpiredTopupWithoutProviderReference_ReturnsPendingTopups()
+    {
+        Blockers(new CloseBlockers(false, false, new[] { new ExpiredTopup(Tx(3), null) }));
+
+        Assert.IsType<DeleteAccountResult.PendingTopups>(await Handle(AccountId, OwnerId));
+        VerifyNeverClosed();
+    }
+
+    [Fact]
+    public async Task Handle_ProviderUnavailable_ReturnsProviderUnavailable()
+    {
+        Blockers(new CloseBlockers(false, false, new[] { new ExpiredTopup(Tx(3), "ch_3") }));
+        ProviderSays("ch_3", new ProviderChargeStatus.Unavailable("timeout"));
+
+        Assert.IsType<DeleteAccountResult.ProviderUnavailable>(await Handle(AccountId, OwnerId));
+        VerifyNeverClosed();
+    }
+
+    [Fact]
+    public async Task Handle_CloseTransactionFindsNewBlocker_ReturnsPendingTopups()
+    {
+        _repository.Setup(r => r.CloseAccountAsync(AccountId, It.IsAny<IReadOnlySet<TransactionId>>()))
+            .ReturnsAsync(new DbResult<CloseAccountOutcome>.Success(CloseAccountOutcome.PendingTopups));
+
+        Assert.IsType<DeleteAccountResult.PendingTopups>(await Handle(AccountId, OwnerId));
+    }
+
+    [Fact]
+    public async Task Handle_SomeoneElsesAccount_ReturnsForbiddenAndNeverCloses()
     {
         DeleteAccountResult result = await Handle(AccountId, OtherUserId);
 
         Assert.IsType<DeleteAccountResult.Forbidden>(result);
-        _repository.Verify(r => r.DeleteAccountAsync(It.IsAny<int>()), Times.Never);
+        VerifyNeverClosed();
     }
 
     [Theory]
     [InlineData(999)]
     [InlineData(0)]
     [InlineData(-1)]
-    public async Task Handle_AccountDoesNotExist_ReturnsNotFoundAndNeverDeletes(int accountId)
+    public async Task Handle_AccountDoesNotExist_ReturnsNotFoundAndNeverCloses(int accountId)
     {
         DeleteAccountResult result = await Handle(accountId, OwnerId);
 
         Assert.IsType<DeleteAccountResult.NotFound>(result);
-        _repository.Verify(r => r.DeleteAccountAsync(It.IsAny<int>()), Times.Never);
+        VerifyNeverClosed();
     }
 
     [Fact]
-    public async Task Handle_AccountDeletedConcurrentlyAfterOwnerCheck_ReturnsNotFound()
+    public async Task Handle_AccountGoneAfterOwnerCheck_ReturnsNotFound()
     {
-        _repository.Setup(r => r.DeleteAccountAsync(AccountId))
-            .ReturnsAsync(new DbResult<bool>.Failure(DbError.NotFound));
+        _repository.Setup(r => r.CloseAccountAsync(AccountId, It.IsAny<IReadOnlySet<TransactionId>>()))
+            .ReturnsAsync(new DbResult<CloseAccountOutcome>.Failure(DbError.NotFound));
 
-        DeleteAccountResult result = await Handle(AccountId, OwnerId);
-
-        Assert.IsType<DeleteAccountResult.NotFound>(result);
+        Assert.IsType<DeleteAccountResult.NotFound>(await Handle(AccountId, OwnerId));
     }
 }

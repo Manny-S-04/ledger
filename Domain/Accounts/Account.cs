@@ -11,6 +11,8 @@ public sealed class Account
     public Currency Currency { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public AccountStatus Status { get; set; } = AccountStatus.Open;
+    public DateTime? ClosedAt { get; set; }
 
     private Account(int id, int userId, Amount balance, Currency currency, DateTime createdAt, DateTime updatedAt)
     {
@@ -39,5 +41,14 @@ public sealed class Account
     public static Account Create(int userId, Amount balance, Currency currency, DateTime createdAt, DateTime updatedAt)
     {
         return new Account(userId, balance, currency, createdAt, updatedAt);
+    }
+
+    public static Account Create(int id, int userId, Amount balance, Currency currency, DateTime createdAt, DateTime updatedAt,
+        AccountStatus status, DateTime? closedAt)
+    {
+        Account account = new Account(id, userId, balance, currency, createdAt, updatedAt);
+        account.Status = status;
+        account.ClosedAt = closedAt;
+        return account;
     }
 }

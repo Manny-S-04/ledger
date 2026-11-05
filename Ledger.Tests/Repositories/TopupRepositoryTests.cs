@@ -33,8 +33,9 @@ public class TopupRepositoryTests : IAsyncLifetime
 
     private async Task<TransactionId> RecordAsync(decimal pounds)
     {
-        DbResult<TransactionId> result = await Repository().RecordTopupAttempt(Account, Amount.TryCreate(pounds)!.Value, Gbp);
-        return Assert.IsType<DbResult<TransactionId>.Success>(result).Value;
+        DbResult<RecordTopupOutcome> result = await Repository().RecordTopupAttempt(Account, Amount.TryCreate(pounds)!.Value, Gbp);
+        RecordTopupOutcome outcome = Assert.IsType<DbResult<RecordTopupOutcome>.Success>(result).Value;
+        return Assert.IsType<RecordTopupOutcome.Recorded>(outcome).TransactionId;
     }
 
     private Task<long> BalanceAsync() => _db.ScalarAsync<long>($"SELECT balance FROM accounts WHERE id = {_accountId}");
@@ -46,6 +47,30 @@ public class TopupRepositoryTests : IAsyncLifetime
         Assert.IsType<DbResult<TopupCallbackOutcome>.Success>(result).Value;
 
     // ---- RecordTopupAttempt ----
+
+    [Fact]
+    public async Task RecordTopupAttempt_ClosedAccount_ReturnsAccountClosedAndInsertsNothing()
+    {
+        await _db.ScalarAsync<int>($"UPDATE accounts SET balance = 0 WHERE id = {_accountId}");
+        await Repository().CloseAccountAsync(_accountId, new HashSet<TransactionId>());
+
+        DbResult<RecordTopupOutcome> result = await Repository().RecordTopupAttempt(Account, Amount.TryCreate(1m)!.Value, Gbp);
+
+        Assert.IsType<RecordTopupOutcome.AccountClosed>(Assert.IsType<DbResult<RecordTopupOutcome>.Success>(result).Value);
+        Assert.Equal(0L, await _db.ScalarAsync<long>($"SELECT count(*) FROM account_transactions WHERE account_id = {_accountId}"));
+    }
+
+    [Fact]
+    public async Task SetTopupProviderReferenceAsync_StoresReferenceOnTheRow()
+    {
+        TransactionId id = await RecordAsync(1m);
+
+        DbResult<bool> result = await Repository().SetTopupProviderReferenceAsync(id, "ch_42");
+
+        Assert.IsType<DbResult<bool>.Success>(result);
+        Assert.Equal("ch_42", await _db.ScalarAsync<string>($"SELECT provider_reference FROM account_transactions WHERE id = {id.Value}"));
+    }
+
 
     [Fact]
     public async Task RecordTopupAttempt_InsertsPendingRowWithAmountAndReturnsItsId()

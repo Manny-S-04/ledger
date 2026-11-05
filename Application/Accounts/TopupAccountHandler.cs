@@ -39,15 +39,24 @@ public class TopupAccountHandler
             return new TopupAccountResult.Failed("User does not own the account");
         }
 
-        DbResult<TransactionId> recordResult = await _accountRepository.RecordTopupAttempt(command.AccountId, command.Amount, command.Currency);
-        if (recordResult is not DbResult<TransactionId>.Success recorded)
+        DbResult<RecordTopupOutcome> recordResult = await _accountRepository.RecordTopupAttempt(command.AccountId, command.Amount, command.Currency);
+        TransactionId transactionId;
+        switch (recordResult)
         {
-            return new TopupAccountResult.Failed("Failed to record the top up");
+            case DbResult<RecordTopupOutcome>.Success { Value: RecordTopupOutcome.Recorded recorded }: transactionId = recorded.TransactionId; break;
+            case DbResult<RecordTopupOutcome>.Success { Value: RecordTopupOutcome.AccountClosed }: return new TopupAccountResult.AccountClosed();
+            default: return new TopupAccountResult.Failed("Failed to record the top up");
         }
 
-        ProviderChargeRequest request = new(recorded.Value, command.Amount, command.Currency);
+        ProviderChargeRequest request = new(transactionId, command.Amount, command.Currency);
 
         ProviderChargeResult chargeResult = await _providerService.RequestChargeAsync(request);
+
+        if (chargeResult is ProviderChargeResult.Accepted accepted
+            && await _accountRepository.SetTopupProviderReferenceAsync(transactionId, accepted.ProviderReference) is not DbResult<bool>.Success)
+        {
+            return new TopupAccountResult.Failed("Failed to store the provider reference");
+        }
 
         return chargeResult switch
         {

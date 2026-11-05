@@ -148,9 +148,15 @@ public static class Program
                 currency VARCHAR(3) NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                status TEXT NOT NULL DEFAULT 'open',
+                closed_at TIMESTAMPTZ,
                 CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES users(id),
-                CONSTRAINT uq_accounts_user_currency UNIQUE (user_id, currency)
+                CONSTRAINT ck_accounts_status CHECK (status IN ('open', 'closed'))
             )",
+            // T-031.11: one open account per currency; closed accounts don't count.
+            @"
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_user_currency
+                ON accounts (user_id, currency) WHERE status = 'open'",
             @"
             CREATE TABLE IF NOT EXISTS account_transactions (
                 id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -160,6 +166,7 @@ public static class Program
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 status TEXT NOT NULL,
+                provider_reference TEXT,
                 CONSTRAINT ck_account_transactions_status CHECK (status IN ('pending', 'done', 'failed', 'expired')),
                 CONSTRAINT fk_account_id FOREIGN KEY (account_id) REFERENCES accounts(id)
             )",
