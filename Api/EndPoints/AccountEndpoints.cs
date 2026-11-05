@@ -173,7 +173,14 @@ public static class AccountEndpoints
             return Results.BadRequest();
         }
 
-        logger.Info($"Top up callback received for reference={request.Reference}, status={request.Status}");
+        logger.Info($"Top up callback received for reference={request.Reference}, status={request.Status}, eventId={request.EventId}, sequence={request.Sequence}");
+
+        // T-034.5: a callback with no eventId is not applied.
+        if (string.IsNullOrWhiteSpace(request.EventId))
+        {
+            logger.Info("result=MissingEventId status=400");
+            return Results.BadRequest();
+        }
 
         if (!int.TryParse(request.Reference, NumberStyles.None, CultureInfo.InvariantCulture, out int referenceValue)
             || TransactionId.TryCreate(referenceValue) is not TransactionId transactionId)
@@ -194,7 +201,7 @@ public static class AccountEndpoints
             return Results.BadRequest();
         }
 
-        TopupAccountCallbackResult result = await handler.Handle(new TopupAccountCallbackCommand(transactionId, parsedStatus));
+        TopupAccountCallbackResult result = await handler.Handle(new TopupAccountCallbackCommand(transactionId, parsedStatus, request.EventId, request.Sequence));
 
         IResult response = result switch
         {
@@ -203,6 +210,9 @@ public static class AccountEndpoints
             // Duplicates and late callbacks are handled silently: 200 so the provider stops retrying.
             TopupAccountCallbackResult.AlreadyProcessed => Results.Ok(),
             TopupAccountCallbackResult.LateSuccessOnExpired => Results.Ok(),
+            // T-034.4: a repeated eventId or a stale Sequence is ignored and answered with 409.
+            TopupAccountCallbackResult.DuplicateEvent => Results.Conflict(),
+            TopupAccountCallbackResult.StaleSequence => Results.Conflict(),
             TopupAccountCallbackResult.NotFound => Results.NotFound(),
             _ => Results.StatusCode(500),
         };

@@ -17,7 +17,7 @@ public interface IAccountRepository
    Task<DbResult<bool>> AccountExistsAsync(UserId userId, Currency currency);
    Task<DbResult<UserId>> GetAccountOwnerAsync(int accountId);
 
-   Task<DbResult<TopupCallbackOutcome>> TopUpAccountAsync(TransactionId transactionId, ProviderCallbackStatus status);
+   Task<DbResult<TopupCallbackOutcome>> TopUpAccountAsync(TransactionId transactionId, ProviderCallbackStatus status, string eventId, long sequence);
    Task<DbResult<TransactionId>> RecordTopupAttempt(AccountId accountId, Amount amount, Currency currency);
    // Marks every pending top-up created before the cutoff as expired. Success(n) = rows expired.
    Task<DbResult<int>> ExpireStalePendingAsync(DateTime createdBefore);
