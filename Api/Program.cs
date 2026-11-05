@@ -160,8 +160,18 @@ public static class Program
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 status TEXT NOT NULL,
+                was_late BOOLEAN NOT NULL DEFAULT FALSE,
                 CONSTRAINT ck_account_transactions_status CHECK (status IN ('pending', 'done', 'failed', 'expired')),
                 CONSTRAINT fk_account_id FOREIGN KEY (account_id) REFERENCES accounts(id)
+            )",
+            // T-027: lateness is recorded as an audit event as well as the was_late column.
+            @"
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                account_transaction_id INTEGER NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT fk_audit_events_account_transaction_id FOREIGN KEY (account_transaction_id) REFERENCES account_transactions(id)
             )",
             // The expiry job only ever scans pending rows by age.
             @"
@@ -180,7 +190,7 @@ public static class Program
 
     private static async Task ClearDb(NpgsqlConnection connection, ILogger logger)
     {
-        await using var command = new NpgsqlCommand("DROP TABLE IF EXISTS account_transactions; DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS users;", connection);
+        await using var command = new NpgsqlCommand("DROP TABLE IF EXISTS audit_events; DROP TABLE IF EXISTS account_transactions; DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS users;", connection);
         await command.ExecuteNonQueryAsync();
         logger.Warn("ClearDb: dropped all tables (runs on every startup)");
     }

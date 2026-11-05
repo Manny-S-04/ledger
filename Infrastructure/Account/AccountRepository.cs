@@ -340,8 +340,11 @@ public sealed class AccountRepository : IAccountRepository
         }
     }
 
-    // Applies a provider callback to the pending transaction it refers to. Only a row that is still pending
-    // changes; on Succeeded the amount stored on that row is credited, in the same DB transaction.
+    // Applies a provider callback to the transaction it refers to. A pending row takes either outcome; an expired
+    // row takes only Succeeded (T-027: a late success is still credited, marked done, was_late set and an audit
+    // event written). On Succeeded the amount stored on that row is credited, in the same DB transaction.
+    // Racing the expiry job: both are single-row UPDATEs, so whichever commits second re-reads the row and sees
+    // the first one's status; the credit happens once either way.
     public async Task<DbResult<TopupCallbackOutcome>> TopUpAccountAsync(TransactionId transactionId, ProviderCallbackStatus status)
     {
         _logger.Info($"TopUpAccountAsync transactionId={transactionId.Value}, status={status}");
@@ -354,8 +357,13 @@ public sealed class AccountRepository : IAccountRepository
 
             int? accountId = null;
             decimal storedAmount = 0m;
+            bool wasLate = false;
+            // SET reads the row's old status, so was_late is true exactly when the row was expired before this update.
             await using (NpgsqlCommand settle = new NpgsqlCommand(
-                "UPDATE account_transactions SET status = @status, updated_at = @updatedAt WHERE id = @id AND status = 'pending' RETURNING account_id, amount", conn, tx))
+                @"UPDATE account_transactions
+                  SET status = @status, was_late = (status = 'expired'), updated_at = @updatedAt
+                  WHERE id = @id AND (status = 'pending' OR (status = 'expired' AND @status = 'done'))
+                  RETURNING account_id, amount, was_late", conn, tx))
             {
                 settle.Parameters.AddWithValue("@id", transactionId.Value);
                 settle.Parameters.AddWithValue("@status", newStatus);
@@ -365,6 +373,7 @@ public sealed class AccountRepository : IAccountRepository
                 {
                     accountId = reader.GetInt32(0);
                     storedAmount = reader.GetDecimal(1);
+                    wasLate = reader.GetBoolean(2);
                 }
             }
 
@@ -394,6 +403,20 @@ public sealed class AccountRepository : IAccountRepository
                 return new DbResult<TopupCallbackOutcome>.Failure(DbError.Unknown);
             }
 
+            if (wasLate)
+            {
+                await using NpgsqlCommand audit = new NpgsqlCommand(
+                    "INSERT INTO audit_events (event_type, account_transaction_id, created_at) VALUES (@eventType, @transactionId, @createdAt)", conn, tx);
+                audit.Parameters.AddWithValue("@eventType", "topup_credited_late");
+                audit.Parameters.AddWithValue("@transactionId", transactionId.Value);
+                audit.Parameters.AddWithValue("@createdAt", now);
+                await audit.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+                _logger.Warn($"result=LateSuccessOnExpired transactionId={transactionId.Value} - credited after the top up expired");
+                return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.LateSuccessOnExpired);
+            }
+
             await tx.CommitAsync();
             _logger.Info("result=Credited");
             return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.Credited);
@@ -417,12 +440,6 @@ public sealed class AccountRepository : IAccountRepository
         {
             _logger.Warn($"result=Failure(NotFound) transactionId={transactionId.Value}");
             return new DbResult<TopupCallbackOutcome>.Failure(DbError.NotFound);
-        }
-
-        if (currentStatus == "expired" && status == ProviderCallbackStatus.Succeeded)
-        {
-            _logger.Warn($"result=LateSuccessOnExpired transactionId={transactionId.Value} - provider took the money after the top up expired");
-            return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.LateSuccessOnExpired);
         }
 
         _logger.Warn($"result=AlreadyProcessed transactionId={transactionId.Value} currentStatus={currentStatus} callbackStatus={status}");

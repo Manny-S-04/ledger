@@ -154,8 +154,15 @@ public class TopupRepositoryTests : IAsyncLifetime
         Assert.Equal("done", await StatusAsync(oldButDone));
     }
 
+    private Task<bool> WasLateAsync(TransactionId id) =>
+        _db.ScalarAsync<bool>($"SELECT was_late FROM account_transactions WHERE id = {id.Value}");
+
+    private Task<long> LateAuditEventsAsync(TransactionId id) =>
+        _db.ScalarAsync<long>($"SELECT COUNT(*) FROM audit_events WHERE event_type = 'topup_credited_late' AND account_transaction_id = {id.Value}");
+
+    // T-027: a late success on an expired top-up is credited once, ends as done, and the lateness is recorded.
     [Fact]
-    public async Task TopUpAccountAsync_SucceededAfterExpired_ReturnsLateSuccessAndDoesNotCredit()
+    public async Task TopUpAccountAsync_SucceededAfterExpired_CreditsOnceMarksDoneAndRecordsLateness()
     {
         TransactionId id = await RecordAsync(10m);
         await BackdateAsync(id, 60);
@@ -164,8 +171,61 @@ public class TopupRepositoryTests : IAsyncLifetime
         DbResult<TopupCallbackOutcome> result = await Repository().TopUpAccountAsync(id, ProviderCallbackStatus.Succeeded);
 
         Assert.Equal(TopupCallbackOutcome.LateSuccessOnExpired, OutcomeOf(result));
-        Assert.Equal("expired", await StatusAsync(id));
-        Assert.Equal(5m, await BalanceAsync());
+        Assert.Equal("done", await StatusAsync(id));
+        Assert.True(await WasLateAsync(id));
+        Assert.Equal(1L, await LateAuditEventsAsync(id));
+        Assert.Equal(15m, await BalanceAsync());
+    }
+
+    [Fact]
+    public async Task TopUpAccountAsync_SucceededWhilePending_IsNotLate()
+    {
+        TransactionId id = await RecordAsync(10m);
+
+        await Repository().TopUpAccountAsync(id, ProviderCallbackStatus.Succeeded);
+
+        Assert.False(await WasLateAsync(id));
+        Assert.Equal(0L, await LateAuditEventsAsync(id));
+    }
+
+    // T-027: the first top-up expires, a second one is started, then both succeed: each credits its own amount once.
+    [Fact]
+    public async Task TopUpAccountAsync_ExpiredThenNewTopup_BothSucceed_EachCreditedOnce()
+    {
+        TransactionId first = await RecordAsync(10m);
+        await BackdateAsync(first, 60);
+        await Repository().ExpireStalePendingAsync(DateTime.UtcNow.AddMinutes(-30));
+        TransactionId second = await RecordAsync(3m);
+
+        await Repository().TopUpAccountAsync(second, ProviderCallbackStatus.Succeeded);
+        await Repository().TopUpAccountAsync(first, ProviderCallbackStatus.Succeeded);
+
+        Assert.Equal("done", await StatusAsync(first));
+        Assert.Equal("done", await StatusAsync(second));
+        Assert.Equal(18m, await BalanceAsync());
+    }
+
+    // T-027.2: a success racing the expiry job is credited exactly once, whichever commits first.
+    [Fact]
+    public async Task TopUpAccountAsync_SucceededRacingExpiryJob_CreditedExactlyOnce()
+    {
+        decimal expected = 5m;
+        for (int i = 0; i < 25; i++)
+        {
+            TransactionId id = await RecordAsync(1m);
+            await BackdateAsync(id, 60);
+            expected += 1m;
+
+            Task<DbResult<int>> expire = Repository().ExpireStalePendingAsync(DateTime.UtcNow.AddMinutes(-30));
+            Task<DbResult<TopupCallbackOutcome>> callback = Repository().TopUpAccountAsync(id, ProviderCallbackStatus.Succeeded);
+            await Task.WhenAll(expire, callback);
+
+            TopupCallbackOutcome outcome = OutcomeOf(await callback);
+            Assert.True(outcome is TopupCallbackOutcome.Credited or TopupCallbackOutcome.LateSuccessOnExpired, $"iteration {i}: {outcome}");
+            Assert.Equal("done", await StatusAsync(id));
+            Assert.Equal(outcome == TopupCallbackOutcome.LateSuccessOnExpired, await WasLateAsync(id));
+            Assert.Equal(expected, await BalanceAsync());
+        }
     }
 
     [Fact]
