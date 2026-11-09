@@ -21,7 +21,7 @@ public class GetAccountsByUserIdHandlerTests
     [Fact]
     public async Task Handle_UserWithAccounts_ReturnsFoundWithAllOfThem()
     {
-        _repository.Setup(r => r.GetAccountsByUserIdAsync(It.Is<UserId>(u => u.Value == 3)))
+        _repository.Setup(r => r.GetAccountsByUserIdAsync(It.Is<UserId>(u => u.Value == 3), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<IEnumerable<Account>>.Success(
                 [AccountTestData.Account(3, 3, "GBP", 500m), AccountTestData.Account(11, 3, "EUR")]));
 
@@ -34,7 +34,7 @@ public class GetAccountsByUserIdHandlerTests
     [Fact]
     public async Task Handle_UserWithNoAccounts_ReturnsFoundWithEmptyList()
     {
-        _repository.Setup(r => r.GetAccountsByUserIdAsync(It.IsAny<UserId>()))
+        _repository.Setup(r => r.GetAccountsByUserIdAsync(It.IsAny<UserId>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<IEnumerable<Account>>.Success([]));
 
         GetAccountsByUserIdResult result = await Handle(999);
@@ -52,6 +52,6 @@ public class GetAccountsByUserIdHandlerTests
         GetAccountsByUserIdResult result = await Handle(userId);
 
         Assert.IsType<GetAccountsByUserIdResult.InvalidUserId>(result);
-        _repository.Verify(r => r.GetAccountsByUserIdAsync(It.IsAny<UserId>()), Times.Never);
+        _repository.Verify(r => r.GetAccountsByUserIdAsync(It.IsAny<UserId>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

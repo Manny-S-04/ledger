@@ -28,7 +28,7 @@ public sealed class AuditTransactionsService : BackgroundService
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                await ExpireStaleAsync();
+                await ExpireStaleAsync(stoppingToken);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -37,13 +37,13 @@ public sealed class AuditTransactionsService : BackgroundService
         }
     }
 
-    private async Task ExpireStaleAsync()
+    private async Task ExpireStaleAsync(CancellationToken cancellationToken)
     {
         // The repository is scoped; a hosted service is a singleton, so it gets its own scope per run.
         await using AsyncServiceScope scope = _scopes.CreateAsyncScope();
         IAccountRepository repository = scope.ServiceProvider.GetRequiredService<IAccountRepository>();
 
-        DbResult<int> result = await repository.ExpireStalePendingAsync(DateTime.UtcNow - _expireAfter);
+        DbResult<int> result = await repository.ExpireStalePendingAsync(DateTime.UtcNow - _expireAfter, cancellationToken);
         switch (result)
         {
             case DbResult<int>.Success { Value: > 0 } success:

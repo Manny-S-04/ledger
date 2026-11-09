@@ -59,11 +59,11 @@ public class ConcurrentSignupTests : IAsyncLifetime
 
         public StaleExistsRepository(IUserRepository inner) => _inner = inner;
 
-        public Task<DbResult<bool>> Exists(Email email) =>
+        public Task<DbResult<bool>> Exists(Email email, CancellationToken cancellationToken = default) =>
             Task.FromResult<DbResult<bool>>(new DbResult<bool>.Success(false));
 
-        public Task<DbResult<UserId>> Create(User user) => _inner.Create(user);
+        public Task<DbResult<UserId>> Create(User user, CancellationToken cancellationToken = default) => _inner.Create(user, cancellationToken);
 
-        public Task<DbResult<User>> GetUserByEmail(Email email) => _inner.GetUserByEmail(email);
+        public Task<DbResult<User>> GetUserByEmail(Email email, CancellationToken cancellationToken = default) => _inner.GetUserByEmail(email, cancellationToken);
     }
 }

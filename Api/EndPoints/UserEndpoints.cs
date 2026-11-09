@@ -35,14 +35,14 @@ public static class UserEndpoints
     private static async Task<IResult> CreateUser(
         CreateUserRequest request,
         CreateUserHandler handler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
         logger.Info("Signup request received");
         CreateUserResult userResult =
             await handler.Handle(
-                    new CreateUserCommand(request.Email, request.Password)
-                    );
+                    new CreateUserCommand(request.Email, request.Password), cancellationToken);
         IResult response = userResult switch
         {
             CreateUserResult.Created => Results.Ok(),
@@ -59,12 +59,13 @@ public static class UserEndpoints
     private static async Task<IResult> Login(
         LoginRequest request,
         AuthenticateHandler handler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
         logger.Info("Login request received");
         AuthenticateResult result =
-            await handler.Handle(new AuthenticateCommand(request.Email, request.Password));
+            await handler.Handle(new AuthenticateCommand(request.Email, request.Password), cancellationToken);
         IResult response = result switch
         {
             AuthenticateResult.Found found =>

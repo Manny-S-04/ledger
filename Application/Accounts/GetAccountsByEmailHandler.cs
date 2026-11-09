@@ -18,7 +18,7 @@ public class GetAccountsByEmailHandler
         _accountRepository = accountRepository;
     }
 
-    public async Task<GetAccountsByEmailResult> Handle(GetAccountsByEmailQuery query)
+    public async Task<GetAccountsByEmailResult> Handle(GetAccountsByEmailQuery query, CancellationToken cancellationToken = default)
     {
         _logger.Info("Getting accounts by email");
         Email? email = Email.TryCreate(query.Email);
@@ -28,7 +28,7 @@ public class GetAccountsByEmailHandler
             return new GetAccountsByEmailResult.InvalidEmail();
         }
 
-        DbResult<IEnumerable<Account>> accounts = await _accountRepository.GetAccountsByEmailAsync(email);
+        DbResult<IEnumerable<Account>> accounts = await _accountRepository.GetAccountsByEmailAsync(email, cancellationToken);
         GetAccountsByEmailResult result = accounts switch
         {
             DbResult<IEnumerable<Account>>.Success success => new GetAccountsByEmailResult.Found(success.Value),

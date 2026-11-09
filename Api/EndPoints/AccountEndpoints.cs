@@ -76,7 +76,8 @@ public static class AccountEndpoints
         string email,
         ClaimsPrincipal user,
         GetAccountsByEmailHandler handler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
         logger.Info($"Get accounts by email request received, callerUserId={user.GetUserId()}");
@@ -87,7 +88,7 @@ public static class AccountEndpoints
         }
 
         GetAccountsByEmailResult result =
-            await handler.Handle(new GetAccountsByEmailQuery(email));
+            await handler.Handle(new GetAccountsByEmailQuery(email), cancellationToken);
         IResult response = result switch
         {
             GetAccountsByEmailResult.Found found => Results.Ok(found.Accounts.Select(AccountResponse.From)),
@@ -103,14 +104,15 @@ public static class AccountEndpoints
     private static async Task<IResult> GetAccountsByUserId(
         ClaimsPrincipal user,
         GetAccountsByUserIdHandler handler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
         int userId = user.GetUserId();
         logger.Info($"Get accounts request received for userId={userId}");
 
         GetAccountsByUserIdResult result =
-            await handler.Handle(new GetAccountsByUserIdQuery(userId));
+            await handler.Handle(new GetAccountsByUserIdQuery(userId), cancellationToken);
         IResult response = result switch
         {
             GetAccountsByUserIdResult.Found found => Results.Ok(found.Accounts.Select(AccountResponse.From)),
@@ -139,13 +141,14 @@ public static class AccountEndpoints
         HttpRequest httpRequest,
         ICallbackSignatureVerifier verifier,
         TopupAccountCallbackHandler handler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
 
         // Verify against the exact bytes received; re-serialised JSON could differ from what was signed.
         using MemoryStream buffer = new MemoryStream();
-        await httpRequest.Body.CopyToAsync(buffer);
+        await httpRequest.Body.CopyToAsync(buffer, cancellationToken);
         byte[] body = buffer.ToArray();
 
         CallbackSignatureResult signature = verifier.Verify(
@@ -201,7 +204,7 @@ public static class AccountEndpoints
             return Results.BadRequest();
         }
 
-        TopupAccountCallbackResult result = await handler.Handle(new TopupAccountCallbackCommand(transactionId, parsedStatus, request.EventId, request.Sequence));
+        TopupAccountCallbackResult result = await handler.Handle(new TopupAccountCallbackCommand(transactionId, parsedStatus, request.EventId, request.Sequence), cancellationToken);
 
         IResult response = result switch
         {
@@ -225,7 +228,8 @@ public static class AccountEndpoints
         TopUpAccountRequest request,
         ClaimsPrincipal user,
         TopupAccountHandler handler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
         logger.Info($"Top up account request received for accountId={request.AccountId}, callerUserId={user.GetUserId()}");
@@ -259,7 +263,7 @@ public static class AccountEndpoints
         Amount amount = parsedAmount;
         Currency currency = parsedCurrency;
 
-        TopupAccountResult result = await handler.Handle(new TopupAccountCommand(userId, accountId, amount, currency));
+        TopupAccountResult result = await handler.Handle(new TopupAccountCommand(userId, accountId, amount, currency), cancellationToken);
 
         IResult response = result switch
         {
@@ -276,14 +280,15 @@ public static class AccountEndpoints
         CreateAccountRequest request,
         ClaimsPrincipal user,
         CreateAccountHandler handler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
         int callerUserId = user.GetUserId();
         logger.Info($"Create account request received, callerUserId={callerUserId}");
 
         CreateAccountResult result =
-            await handler.Handle(new CreateAccountCommand(callerUserId, request.Currency));
+            await handler.Handle(new CreateAccountCommand(callerUserId, request.Currency), cancellationToken);
         IResult response = result switch
         {
             CreateAccountResult.Created created => Results.Ok(AccountResponse.From(created.Account)),
@@ -309,12 +314,13 @@ public static class AccountEndpoints
         int id,
         ClaimsPrincipal user,
         DeleteAccountHandler handler,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
         logger.Info($"Delete account request received for accountId={id}, callerUserId={user.GetUserId()}");
         DeleteAccountResult result =
-            await handler.Handle(new DeleteAccountCommand(id, user.GetUserId()));
+            await handler.Handle(new DeleteAccountCommand(id, user.GetUserId()), cancellationToken);
         IResult response = result switch
         {
             DeleteAccountResult.Deleted => Results.Ok(),

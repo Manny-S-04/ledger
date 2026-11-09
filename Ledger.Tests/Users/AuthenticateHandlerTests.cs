@@ -24,9 +24,9 @@ public class AuthenticateHandlerTests
     public AuthenticateHandlerTests()
     {
         User existing = User.Create(1, Email.TryCreate(UserEmail)!, StoredHash, DateTime.UtcNow);
-        _repository.Setup(r => r.GetUserByEmail(It.Is<Email>(e => e.EmailAddress == UserEmail)))
+        _repository.Setup(r => r.GetUserByEmail(It.Is<Email>(e => e.EmailAddress == UserEmail), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<User>.Success(existing));
-        _repository.Setup(r => r.GetUserByEmail(It.Is<Email>(e => e.EmailAddress != UserEmail)))
+        _repository.Setup(r => r.GetUserByEmail(It.Is<Email>(e => e.EmailAddress != UserEmail), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<User>.Failure(DbError.NotFound));
         _hasher.Setup(h => h.Verify(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
         _hasher.Setup(h => h.Verify(UserPassword, StoredHash)).Returns(true);
@@ -109,7 +109,7 @@ public class AuthenticateHandlerTests
         AuthenticateResult result = await Handle(email, UserPassword);
 
         Assert.IsType<AuthenticateResult.NotFound>(result);
-        _repository.Verify(r => r.GetUserByEmail(It.IsAny<Email>()), Times.Never);
+        _repository.Verify(r => r.GetUserByEmail(It.IsAny<Email>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

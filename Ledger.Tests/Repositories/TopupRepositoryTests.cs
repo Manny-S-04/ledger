@@ -73,7 +73,7 @@ public class TopupRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TopUpAccountAsync_DatabaseUnreachable_ReturnsUnavailable()
     {
-        DbResult<TopupCallbackOutcome> result = await UnreachableRepository().TopUpAccountAsync(TransactionId.TryCreate(1)!.Value, ProviderCallbackStatus.Succeeded);
+        DbResult<TopupCallbackOutcome> result = await UnreachableRepository().TopUpAccountAsync(TransactionId.TryCreate(1)!.Value, ProviderCallbackStatus.Succeeded, "evt_unreachable", 1);
         Assert.Equal(DbError.Unavailable, Assert.IsType<DbResult<TopupCallbackOutcome>.Failure>(result).Error);
     }
 

@@ -17,7 +17,7 @@ public class TopupAccountHandler
         _providerService = providerService;
     }
 
-    public async Task<TopupAccountResult> Handle(TopupAccountCommand command)
+    public async Task<TopupAccountResult> Handle(TopupAccountCommand command, CancellationToken cancellationToken = default)
     {
         if (command.Amount.Pence <= 0)
         {
@@ -25,7 +25,7 @@ public class TopupAccountHandler
         }
 
         UserId userId;
-        DbResult<UserId> userIdResult = await _accountRepository.GetAccountOwnerAsync(command.AccountId.Value);
+        DbResult<UserId> userIdResult = await _accountRepository.GetAccountOwnerAsync(command.AccountId.Value, cancellationToken);
 
         switch(userIdResult) 
         {
@@ -39,7 +39,7 @@ public class TopupAccountHandler
             return new TopupAccountResult.Failed("User does not own the account");
         }
 
-        DbResult<TransactionId> recordResult = await _accountRepository.RecordTopupAttempt(command.AccountId, command.Amount, command.Currency);
+        DbResult<TransactionId> recordResult = await _accountRepository.RecordTopupAttempt(command.AccountId, command.Amount, command.Currency, cancellationToken);
         if (recordResult is not DbResult<TransactionId>.Success recorded)
         {
             return new TopupAccountResult.Failed("Failed to record the top up");
@@ -47,7 +47,7 @@ public class TopupAccountHandler
 
         ProviderChargeRequest request = new(recorded.Value, command.Amount, command.Currency);
 
-        ProviderChargeResult chargeResult = await _providerService.RequestChargeAsync(request);
+        ProviderChargeResult chargeResult = await _providerService.RequestChargeAsync(request, cancellationToken);
 
         return chargeResult switch
         {

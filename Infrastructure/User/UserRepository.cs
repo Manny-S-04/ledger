@@ -18,17 +18,17 @@ public sealed class UserRepository : IUserRepository
         _logger = logger;
     }
 
-    public async Task<DbResult<UserId>> Create(Domain.Users.User user)
+    public async Task<DbResult<UserId>> Create(Domain.Users.User user, CancellationToken cancellationToken = default)
     {
         _logger.Info("Inserting new user");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand("INSERT INTO Users (email, password_hash) VALUES (@email, @password_hash) RETURNING id", conn);
             cmd.Parameters.AddWithValue("@email", user.Email.EmailAddress);
             cmd.Parameters.AddWithValue("@password_hash", user.PasswordHash);
 
-            var userIdObj = await cmd.ExecuteScalarAsync();
+            var userIdObj = await cmd.ExecuteScalarAsync(cancellationToken);
 
             if (userIdObj is not int userId)
             {
@@ -63,16 +63,16 @@ public sealed class UserRepository : IUserRepository
         }
     }
 
-    public async Task<DbResult<bool>> Exists(Email email)
+    public async Task<DbResult<bool>> Exists(Email email, CancellationToken cancellationToken = default)
     {
         _logger.Info("Checking whether a user with this email already exists");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM Users WHERE email = @email)", conn);
             cmd.Parameters.AddWithValue("@email", email.EmailAddress);
 
-            var exists = await cmd.ExecuteScalarAsync();
+            var exists = await cmd.ExecuteScalarAsync(cancellationToken);
 
             if (exists is bool b)
             {
@@ -95,18 +95,18 @@ public sealed class UserRepository : IUserRepository
         }
     }
 
-    public async Task<DbResult<Domain.Users.User>> GetUserByEmail(Email email)
+    public async Task<DbResult<Domain.Users.User>> GetUserByEmail(Email email, CancellationToken cancellationToken = default)
     {
         _logger.Info("Looking up user by email");
         try
         {
-            await using var conn = await _dataSource.OpenConnectionAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand("SELECT id, email, password_hash, created_at FROM Users WHERE email = @email", conn);
             cmd.Parameters.AddWithValue("@email", email.EmailAddress);
 
-            await using var reader = await cmd.ExecuteReaderAsync();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
-            if (!await reader.ReadAsync())
+            if (!await reader.ReadAsync(cancellationToken))
             {
                 _logger.Info("result=Failure(NotFound)");
                 return new DbResult<Domain.Users.User>.Failure(DbError.NotFound);

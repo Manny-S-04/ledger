@@ -18,7 +18,7 @@ public class GetAccountsByEmailHandlerTests
             .Handle(new GetAccountsByEmailQuery(email!));
 
     private void RepositoryReturns(params Account[] accounts) =>
-        _repository.Setup(r => r.GetAccountsByEmailAsync(It.IsAny<Email>()))
+        _repository.Setup(r => r.GetAccountsByEmailAsync(It.IsAny<Email>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<IEnumerable<Account>>.Success(accounts));
 
     [Fact]
@@ -46,7 +46,7 @@ public class GetAccountsByEmailHandlerTests
     [Fact]
     public async Task Handle_EmailWithNoUser_ReturnsNotFound()
     {
-        _repository.Setup(r => r.GetAccountsByEmailAsync(It.IsAny<Email>()))
+        _repository.Setup(r => r.GetAccountsByEmailAsync(It.IsAny<Email>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<IEnumerable<Account>>.Failure(DbError.NotFound));
 
         GetAccountsByEmailResult result = await Handle("nobody@example.com");
@@ -61,7 +61,7 @@ public class GetAccountsByEmailHandlerTests
 
         await Handle("  User1@EXAMPLE.com ");
 
-        _repository.Verify(r => r.GetAccountsByEmailAsync(It.Is<Email>(e => e.EmailAddress == "user1@example.com")), Times.Once);
+        _repository.Verify(r => r.GetAccountsByEmailAsync(It.Is<Email>(e => e.EmailAddress == "user1@example.com"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]
@@ -75,6 +75,6 @@ public class GetAccountsByEmailHandlerTests
         GetAccountsByEmailResult result = await Handle(email);
 
         Assert.IsType<GetAccountsByEmailResult.InvalidEmail>(result);
-        _repository.Verify(r => r.GetAccountsByEmailAsync(It.IsAny<Email>()), Times.Never);
+        _repository.Verify(r => r.GetAccountsByEmailAsync(It.IsAny<Email>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }
