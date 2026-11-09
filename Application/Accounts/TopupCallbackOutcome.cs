@@ -6,8 +6,8 @@ public enum TopupCallbackOutcome
     Credited,         // was pending, provider said Succeeded: marked done and the stored amount credited
     MarkedFailed,     // was pending, provider said Failed: marked failed, nothing credited
     AlreadyProcessed, // was done or failed already (a duplicate or late callback): nothing changed
-    LateSuccessOnExpired, // was expired, provider now says Succeeded: nothing changed.
-                         // OPEN (Manny): the money was taken - credit it anyway, or flag it for refund?
+    LateSuccessOnExpired, // was expired, provider now says Succeeded (T-027): credited, marked done, was_late set,
+                          // and a topup_credited_late audit event written
     DuplicateEvent,   // T-034: this eventId was already processed: nothing changed
     StaleSequence     // T-034: Sequence is lower than the last one received for this top-up: nothing changed
 }
