@@ -22,7 +22,7 @@ public class TopupRepositoryTests : IAsyncLifetime
     {
         await _db.ResetAsync();
         int userId = await _db.InsertUserAsync("owner@example.com");
-        _accountId = await _db.InsertAccountAsync(userId, "GBP", 5m);
+        _accountId = await _db.InsertAccountAsync(userId, "GBP", 500);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -38,7 +38,7 @@ public class TopupRepositoryTests : IAsyncLifetime
         return Assert.IsType<DbResult<TransactionId>.Success>(result).Value;
     }
 
-    private Task<decimal> BalanceAsync() => _db.ScalarAsync<decimal>($"SELECT balance FROM accounts WHERE id = {_accountId}");
+    private Task<long> BalanceAsync() => _db.ScalarAsync<long>($"SELECT balance FROM accounts WHERE id = {_accountId}");
 
     private Task<string?> StatusAsync(TransactionId id) =>
         _db.ScalarAsync<string>($"SELECT status FROM account_transactions WHERE id = {id.Value}");
@@ -92,9 +92,9 @@ public class TopupRepositoryTests : IAsyncLifetime
         TransactionId id = await RecordAsync(12.34m);
 
         Assert.Equal("pending", await StatusAsync(id));
-        Assert.Equal(12.34m, await _db.ScalarAsync<decimal>($"SELECT amount FROM account_transactions WHERE id = {id.Value}"));
+        Assert.Equal(1234L, await _db.ScalarAsync<long>($"SELECT amount FROM account_transactions WHERE id = {id.Value}"));
         Assert.Equal(_accountId, await _db.ScalarAsync<int>($"SELECT account_id FROM account_transactions WHERE id = {id.Value}"));
-        Assert.Equal(5m, await BalanceAsync());
+        Assert.Equal(500L, await BalanceAsync());
     }
 
     // ---- TopUpAccountAsync (callback) ----
@@ -107,7 +107,7 @@ public class TopupRepositoryTests : IAsyncLifetime
         DbResult<TopupCallbackOutcome> result = await CallbackAsync(id, ProviderCallbackStatus.Succeeded);
 
         Assert.Equal(TopupCallbackOutcome.Credited, OutcomeOf(result));
-        Assert.Equal(17.34m, await BalanceAsync());
+        Assert.Equal(1734L, await BalanceAsync());
         Assert.Equal("done", await StatusAsync(id));
     }
 
@@ -120,7 +120,7 @@ public class TopupRepositoryTests : IAsyncLifetime
         DbResult<TopupCallbackOutcome> second = await CallbackAsync(id, ProviderCallbackStatus.Succeeded);
 
         Assert.Equal(TopupCallbackOutcome.AlreadyProcessed, OutcomeOf(second));
-        Assert.Equal(15m, await BalanceAsync());
+        Assert.Equal(1500L, await BalanceAsync());
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public class TopupRepositoryTests : IAsyncLifetime
 
         Assert.Equal(1, results.Count(r => OutcomeOf(r) == TopupCallbackOutcome.Credited));
         Assert.Equal(9, results.Count(r => OutcomeOf(r) == TopupCallbackOutcome.AlreadyProcessed));
-        Assert.Equal(15m, await BalanceAsync());
+        Assert.Equal(1500L, await BalanceAsync());
     }
 
     [Fact]
@@ -144,7 +144,7 @@ public class TopupRepositoryTests : IAsyncLifetime
         DbResult<TopupCallbackOutcome> result = await CallbackAsync(id, ProviderCallbackStatus.Failed);
 
         Assert.Equal(TopupCallbackOutcome.MarkedFailed, OutcomeOf(result));
-        Assert.Equal(5m, await BalanceAsync());
+        Assert.Equal(500L, await BalanceAsync());
         Assert.Equal("failed", await StatusAsync(id));
     }
 
@@ -158,7 +158,7 @@ public class TopupRepositoryTests : IAsyncLifetime
 
         Assert.Equal(TopupCallbackOutcome.AlreadyProcessed, OutcomeOf(late));
         Assert.Equal("done", await StatusAsync(id));
-        Assert.Equal(15m, await BalanceAsync());
+        Assert.Equal(1500L, await BalanceAsync());
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public class TopupRepositoryTests : IAsyncLifetime
         Assert.Equal("done", await StatusAsync(id));
         Assert.True(await WasLateAsync(id));
         Assert.Equal(1L, await LateAuditEventsAsync(id));
-        Assert.Equal(15m, await BalanceAsync());
+        Assert.Equal(1500L, await BalanceAsync());
     }
 
     [Fact]
@@ -241,19 +241,19 @@ public class TopupRepositoryTests : IAsyncLifetime
 
         Assert.Equal("done", await StatusAsync(first));
         Assert.Equal("done", await StatusAsync(second));
-        Assert.Equal(18m, await BalanceAsync());
+        Assert.Equal(1800L, await BalanceAsync());
     }
 
     // T-027.2: a success racing the expiry job is credited exactly once, whichever commits first.
     [Fact]
     public async Task TopUpAccountAsync_SucceededRacingExpiryJob_CreditedExactlyOnce()
     {
-        decimal expected = 5m;
+        long expected = 500L;
         for (int i = 0; i < 25; i++)
         {
             TransactionId id = await RecordAsync(1m);
             await BackdateAsync(id, 60);
-            expected += 1m;
+            expected += 100L;
 
             Task<DbResult<int>> expire = Repository().ExpireStalePendingAsync(DateTime.UtcNow.AddMinutes(-30));
             Task<DbResult<TopupCallbackOutcome>> callback = Repository().TopUpAccountAsync(id, ProviderCallbackStatus.Succeeded, $"evt_{Guid.NewGuid():N}", 1);
@@ -292,7 +292,7 @@ public class TopupRepositoryTests : IAsyncLifetime
 
         Assert.Equal(TopupCallbackOutcome.Credited, OutcomeOf(first));
         Assert.Equal(TopupCallbackOutcome.DuplicateEvent, OutcomeOf(second));
-        Assert.Equal(15m, await BalanceAsync());
+        Assert.Equal(1500L, await BalanceAsync());
     }
 
     [Fact]
@@ -306,7 +306,7 @@ public class TopupRepositoryTests : IAsyncLifetime
         Assert.Equal(1, results.Count(r => OutcomeOf(r) == TopupCallbackOutcome.Credited));
         Assert.Equal(9, results.Count(r => OutcomeOf(r) == TopupCallbackOutcome.DuplicateEvent));
         Assert.Equal(1L, await _db.ScalarAsync<long>("SELECT COUNT(*) FROM processed_callbacks WHERE event_id = 'evt_same'"));
-        Assert.Equal(15m, await BalanceAsync());
+        Assert.Equal(1500L, await BalanceAsync());
     }
 
     [Fact]
@@ -320,7 +320,7 @@ public class TopupRepositoryTests : IAsyncLifetime
         Assert.Equal(TopupCallbackOutcome.StaleSequence, OutcomeOf(older));
         Assert.Equal("failed", await StatusAsync(id));
         Assert.Equal(2L, await _db.ScalarAsync<long>($"SELECT last_sequence FROM account_transactions WHERE id = {id.Value}"));
-        Assert.Equal(5m, await BalanceAsync());
+        Assert.Equal(500L, await BalanceAsync());
     }
 
     [Fact]
@@ -347,7 +347,7 @@ public class TopupRepositoryTests : IAsyncLifetime
 
         Assert.Equal(TopupCallbackOutcome.AlreadyProcessed, OutcomeOf(other));
         Assert.Equal("evt_b", await _db.ScalarAsync<string>($"SELECT last_event_id FROM account_transactions WHERE id = {id.Value}"));
-        Assert.Equal(15m, await BalanceAsync());
+        Assert.Equal(1500L, await BalanceAsync());
     }
 
     // T-034.6: a callback for an unknown top-up counts as processed.

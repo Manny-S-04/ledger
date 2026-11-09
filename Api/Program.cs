@@ -152,7 +152,7 @@ public static class Program
             CREATE TABLE IF NOT EXISTS accounts (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
-                balance DECIMAL(15, 2) NOT NULL,
+                balance BIGINT NOT NULL,
                 currency VARCHAR(3) NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -163,7 +163,7 @@ public static class Program
             CREATE TABLE IF NOT EXISTS account_transactions (
                 id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                 account_id INTEGER NOT NULL,
-                amount DECIMAL(15, 2) NOT NULL,
+                amount BIGINT NOT NULL,
                 currency TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -296,7 +296,7 @@ A wallet platform where users hold balances, top up from an external provider (y
 
 Functional requirements
 
-F1. Users can create accounts, one currency.
+F1. Users can create accounts, one currency. 
 F2. Top-up starts from the client and completes when the provider calls back. The provider may call back late, twice, out of order, or never.
 F3. A transfer between two accounts is atomic, and no account may go negative. Concurrent transfers on one account must not break this.
 F4. Balance and a paginated statement can be queried, and a statement can be reproduced as of any past moment.
