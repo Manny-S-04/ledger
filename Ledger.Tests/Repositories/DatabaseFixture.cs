@@ -46,7 +46,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
     public async Task ResetAsync()
     {
         await using NpgsqlConnection conn = await DataSource.OpenConnectionAsync();
-        await using NpgsqlCommand cmd = new("TRUNCATE accounts, users RESTART IDENTITY CASCADE", conn);
+        await using NpgsqlCommand cmd = new("TRUNCATE processed_callbacks, accounts, users RESTART IDENTITY CASCADE", conn);
         await cmd.ExecuteNonQueryAsync();
     }
 

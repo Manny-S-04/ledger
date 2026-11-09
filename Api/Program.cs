@@ -168,8 +168,19 @@ public static class Program
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 status TEXT NOT NULL,
+                last_sequence BIGINT,
+                last_event_id TEXT,
                 CONSTRAINT ck_account_transactions_status CHECK (status IN ('pending', 'done', 'failed', 'expired')),
                 CONSTRAINT fk_account_id FOREIGN KEY (account_id) REFERENCES accounts(id)
+            )",
+            // T-034: every provider callback eventId the ledger has processed. account_transaction_id has no FK: a callback
+            // for an unknown top-up still counts as processed (T-034.6).
+            @"
+            CREATE TABLE IF NOT EXISTS processed_callbacks (
+                event_id TEXT PRIMARY KEY,
+                account_transaction_id INTEGER NOT NULL,
+                sequence BIGINT NOT NULL,
+                processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
             // The expiry job only ever scans pending rows by age.
             @"
@@ -188,7 +199,7 @@ public static class Program
 
     private static async Task ClearDb(NpgsqlConnection connection, ILogger logger)
     {
-        await using var command = new NpgsqlCommand("DROP TABLE IF EXISTS account_transactions; DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS users;", connection);
+        await using var command = new NpgsqlCommand("DROP TABLE IF EXISTS processed_callbacks; DROP TABLE IF EXISTS account_transactions; DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS users;", connection);
         await command.ExecuteNonQueryAsync();
         logger.Warn("ClearDb: dropped all tables (runs on every startup)");
     }

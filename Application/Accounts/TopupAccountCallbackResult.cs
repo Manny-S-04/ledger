@@ -6,6 +6,8 @@ public abstract record TopupAccountCallbackResult
     public sealed record MarkedFailed : TopupAccountCallbackResult;
     public sealed record AlreadyProcessed : TopupAccountCallbackResult;
     public sealed record LateSuccessOnExpired : TopupAccountCallbackResult;
+    public sealed record DuplicateEvent : TopupAccountCallbackResult;
+    public sealed record StaleSequence : TopupAccountCallbackResult;
     public sealed record NotFound : TopupAccountCallbackResult;
     public sealed record Failed : TopupAccountCallbackResult;
 }

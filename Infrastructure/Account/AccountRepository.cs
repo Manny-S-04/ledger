@@ -342,9 +342,12 @@ public sealed class AccountRepository : IAccountRepository
 
     // Applies a provider callback to the pending transaction it refers to. Only a row that is still pending
     // changes; on Succeeded the amount stored on that row is credited, in the same DB transaction.
-    public async Task<DbResult<TopupCallbackOutcome>> TopUpAccountAsync(TransactionId transactionId, ProviderCallbackStatus status)
+    // T-034: the eventId is recorded in processed_callbacks (unique) and the top-up row is locked, in that same
+    // transaction. A repeated eventId or a Sequence lower than the last one received changes nothing. A callback for
+    // an unknown top-up still counts as processed; a DB failure rolls everything back, so it does not.
+    public async Task<DbResult<TopupCallbackOutcome>> TopUpAccountAsync(TransactionId transactionId, ProviderCallbackStatus status, string eventId, long sequence)
     {
-        _logger.Info($"TopUpAccountAsync transactionId={transactionId.Value}, status={status}");
+        _logger.Info($"TopUpAccountAsync transactionId={transactionId.Value}, status={status}, eventId={eventId}, sequence={sequence}");
         string newStatus = status == ProviderCallbackStatus.Succeeded ? "done" : "failed";
         try
         {
@@ -352,26 +355,84 @@ public sealed class AccountRepository : IAccountRepository
             await using NpgsqlTransaction tx = await conn.BeginTransactionAsync();
             DateTime now = DateTime.UtcNow;
 
-            int? accountId = null;
-            decimal storedAmount = 0m;
+            // A concurrent copy of the same eventId waits here on the unique key until this transaction ends.
+            await using (NpgsqlCommand record = new NpgsqlCommand(
+                "INSERT INTO processed_callbacks (event_id, account_transaction_id, sequence, processed_at) VALUES (@eventId, @id, @sequence, @processedAt) ON CONFLICT (event_id) DO NOTHING", conn, tx))
+            {
+                record.Parameters.AddWithValue("@eventId", eventId);
+                record.Parameters.AddWithValue("@id", transactionId.Value);
+                record.Parameters.AddWithValue("@sequence", sequence);
+                record.Parameters.AddWithValue("@processedAt", now);
+                if (await record.ExecuteNonQueryAsync() == 0)
+                {
+                    await tx.RollbackAsync();
+                    _logger.Warn($"result=DuplicateEvent eventId={eventId}");
+                    return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.DuplicateEvent);
+                }
+            }
+
+            string? currentStatus = null;
+            long? lastSequence = null;
+            await using (NpgsqlCommand lockRow = new NpgsqlCommand(
+                "SELECT status, last_sequence FROM account_transactions WHERE id = @id FOR UPDATE", conn, tx))
+            {
+                lockRow.Parameters.AddWithValue("@id", transactionId.Value);
+                await using NpgsqlDataReader reader = await lockRow.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    currentStatus = reader.GetString(0);
+                    lastSequence = reader.IsDBNull(1) ? null : reader.GetInt64(1);
+                }
+            }
+
+            if (currentStatus is null)
+            {
+                await tx.CommitAsync();
+                _logger.Warn($"result=Failure(NotFound) transactionId={transactionId.Value}");
+                return new DbResult<TopupCallbackOutcome>.Failure(DbError.NotFound);
+            }
+
+            if (lastSequence is long last && sequence < last)
+            {
+                await tx.CommitAsync();
+                _logger.Warn($"result=StaleSequence transactionId={transactionId.Value} sequence={sequence} lastSequence={last}");
+                return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.StaleSequence);
+            }
+
+            await using (NpgsqlCommand received = new NpgsqlCommand(
+                "UPDATE account_transactions SET last_sequence = @sequence, last_event_id = @eventId WHERE id = @id", conn, tx))
+            {
+                received.Parameters.AddWithValue("@id", transactionId.Value);
+                received.Parameters.AddWithValue("@sequence", sequence);
+                received.Parameters.AddWithValue("@eventId", eventId);
+                await received.ExecuteNonQueryAsync();
+            }
+
+            if (currentStatus != "pending")
+            {
+                await tx.CommitAsync();
+                if (currentStatus == "expired" && status == ProviderCallbackStatus.Succeeded)
+                {
+                    _logger.Warn($"result=LateSuccessOnExpired transactionId={transactionId.Value} - provider took the money after the top up expired");
+                    return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.LateSuccessOnExpired);
+                }
+
+                _logger.Warn($"result=AlreadyProcessed transactionId={transactionId.Value} currentStatus={currentStatus} callbackStatus={status}");
+                return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.AlreadyProcessed);
+            }
+
+            int accountId;
+            decimal storedAmount;
             await using (NpgsqlCommand settle = new NpgsqlCommand(
-                "UPDATE account_transactions SET status = @status, updated_at = @updatedAt WHERE id = @id AND status = 'pending' RETURNING account_id, amount", conn, tx))
+                "UPDATE account_transactions SET status = @status, updated_at = @updatedAt WHERE id = @id RETURNING account_id, amount", conn, tx))
             {
                 settle.Parameters.AddWithValue("@id", transactionId.Value);
                 settle.Parameters.AddWithValue("@status", newStatus);
                 settle.Parameters.AddWithValue("@updatedAt", now);
                 await using NpgsqlDataReader reader = await settle.ExecuteReaderAsync();
-                if (await reader.ReadAsync())
-                {
-                    accountId = reader.GetInt32(0);
-                    storedAmount = reader.GetDecimal(1);
-                }
-            }
-
-            if (accountId is null)
-            {
-                await tx.RollbackAsync();
-                return await NotPendingOutcomeAsync(conn, transactionId, status);
+                await reader.ReadAsync();
+                accountId = reader.GetInt32(0);
+                storedAmount = reader.GetDecimal(1);
             }
 
             if (status == ProviderCallbackStatus.Failed)
@@ -383,7 +444,7 @@ public sealed class AccountRepository : IAccountRepository
 
             await using NpgsqlCommand credit = new NpgsqlCommand(
                 "UPDATE accounts SET balance = balance + @amount, updated_at = @updatedAt WHERE id = @accountId", conn, tx);
-            credit.Parameters.AddWithValue("@accountId", accountId.Value);
+            credit.Parameters.AddWithValue("@accountId", accountId);
             credit.Parameters.AddWithValue("@amount", storedAmount);
             credit.Parameters.AddWithValue("@updatedAt", now);
             int credited = await credit.ExecuteNonQueryAsync();
@@ -403,30 +464,6 @@ public sealed class AccountRepository : IAccountRepository
             _logger.Error(ex, "failed");
             return new DbResult<TopupCallbackOutcome>.Failure(DbError.Unknown);
         }
-    }
-
-    // The settle UPDATE changed nothing: the transaction doesn't exist, or it is no longer pending.
-    // Nothing goes back to the user for these; they are logged as warnings for the back end to look at.
-    private async Task<DbResult<TopupCallbackOutcome>> NotPendingOutcomeAsync(
-        NpgsqlConnection conn, TransactionId transactionId, ProviderCallbackStatus status)
-    {
-        await using NpgsqlCommand cmd = new NpgsqlCommand("SELECT status FROM account_transactions WHERE id = @id", conn);
-        cmd.Parameters.AddWithValue("@id", transactionId.Value);
-        object? current = await cmd.ExecuteScalarAsync();
-        if (current is not string currentStatus)
-        {
-            _logger.Warn($"result=Failure(NotFound) transactionId={transactionId.Value}");
-            return new DbResult<TopupCallbackOutcome>.Failure(DbError.NotFound);
-        }
-
-        if (currentStatus == "expired" && status == ProviderCallbackStatus.Succeeded)
-        {
-            _logger.Warn($"result=LateSuccessOnExpired transactionId={transactionId.Value} - provider took the money after the top up expired");
-            return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.LateSuccessOnExpired);
-        }
-
-        _logger.Warn($"result=AlreadyProcessed transactionId={transactionId.Value} currentStatus={currentStatus} callbackStatus={status}");
-        return new DbResult<TopupCallbackOutcome>.Success(TopupCallbackOutcome.AlreadyProcessed);
     }
 
     public async Task<DbResult<int>> ExpireStalePendingAsync(DateTime createdBefore)
