@@ -59,7 +59,7 @@ public sealed class UserRepository : IUserRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<UserId>.Failure(DbError.Unknown);
+            return new DbResult<UserId>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -91,7 +91,7 @@ public sealed class UserRepository : IUserRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<bool>.Failure(DbError.Unknown);
+            return new DbResult<bool>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 
@@ -136,7 +136,7 @@ public sealed class UserRepository : IUserRepository
         catch (Exception ex)
         {
             _logger.Error(ex, "failed");
-            return new DbResult<Domain.Users.User>.Failure(DbError.Unknown);
+            return new DbResult<Domain.Users.User>.Failure(NpgsqlErrors.Map(ex));
         }
     }
 }

@@ -17,5 +17,8 @@ public enum DbError
     Unavailable,
     ConstraintViolation,
     NotFound,
+    Timeout,      // T-032: statement timeout / lock wait gave up (57014, 55P03)
+    Conflict,     // T-032: serialization failure / deadlock, safe to retry (class 40)
+    Cancelled,    // T-032: the caller cancelled the call (OperationCanceledException)
     Unknown
 }
