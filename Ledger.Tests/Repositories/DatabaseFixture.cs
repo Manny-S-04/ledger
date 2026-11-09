@@ -71,6 +71,18 @@ public sealed class DatabaseFixture : IAsyncLifetime
         return (int)(await cmd.ExecuteScalarAsync())!;
     }
 
+    public async Task<int> InsertTopupAsync(int accountId, string status, string? providerReference = null, long amountPence = 100)
+    {
+        await using NpgsqlConnection conn = await DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new(
+            "INSERT INTO account_transactions (account_id, amount, currency, status, provider_reference) VALUES (@accountId, @amount, 'GBP', @status, @reference) RETURNING id", conn);
+        cmd.Parameters.AddWithValue("@accountId", accountId);
+        cmd.Parameters.AddWithValue("@amount", amountPence);
+        cmd.Parameters.AddWithValue("@status", status);
+        cmd.Parameters.AddWithValue("@reference", (object?)providerReference ?? DBNull.Value);
+        return (int)(await cmd.ExecuteScalarAsync())!;
+    }
+
     public async Task<T?> ScalarAsync<T>(string sql)
     {
         await using NpgsqlConnection conn = await DataSource.OpenConnectionAsync();

@@ -37,7 +37,9 @@ public static class AccountEndpoints
         long BalancePence,
         string Currency,
         DateTime CreatedAt,
-        DateTime UpdatedAt)
+        DateTime UpdatedAt,
+        string Status,
+        DateTime? ClosedAt)
     {
         public static AccountResponse From(Account account) =>
             new(account.Id,
@@ -45,7 +47,9 @@ public static class AccountEndpoints
                 account.Balance.Pence,
                 account.Currency.Code,
                 account.CreatedAt,
-                account.UpdatedAt);
+                account.UpdatedAt,
+                account.Status == AccountStatus.Closed ? "closed" : "open",
+                account.ClosedAt);
     }
 
     public static IEndpointRouteBuilder MapAccountEndpoints(
@@ -261,6 +265,7 @@ public static class AccountEndpoints
         IResult response = result switch
         {
             TopupAccountResult.Pending => Results.StatusCode(200),
+            TopupAccountResult.AccountClosed => Results.Problem(statusCode: 409, type: "account_closed", title: "account is closed"),
             TopupAccountResult.InvalidCurrency => Results.BadRequest(), // is this the correct code?
             TopupAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
@@ -316,10 +321,12 @@ public static class AccountEndpoints
             await handler.Handle(new DeleteAccountCommand(id, user.GetUserId()), cancellationToken);
         IResult response = result switch
         {
-            DeleteAccountResult.Deleted => Results.Ok(),
+            DeleteAccountResult.Closed => Results.NoContent(),
             DeleteAccountResult.NotFound => Results.NotFound(),
             DeleteAccountResult.Forbidden => Results.Forbid(),
             DeleteAccountResult.HasBalance => Results.Conflict(),
+            DeleteAccountResult.PendingTopups => Results.Problem(statusCode: 409, type: "pending_topups", title: "account has pending top-ups"),
+            DeleteAccountResult.ProviderUnavailable => Results.StatusCode(503),
             DeleteAccountResult.Failed => Results.StatusCode(500),
             _ => Results.StatusCode(500)
         };

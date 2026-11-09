@@ -21,7 +21,7 @@ public class TopupAccountHandlerCancellationTests
         repository.Setup(r => r.GetAccountOwnerAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DbResult<UserId>.Success(owner));
         repository.Setup(r => r.RecordTopupAttempt(It.IsAny<AccountId>(), It.IsAny<Amount>(), It.IsAny<Currency>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DbResult<TransactionId>.Success(TransactionId.TryCreate(1)!.Value));
+            .ReturnsAsync(new DbResult<RecordTopupOutcome>.Success(new RecordTopupOutcome.Recorded(TransactionId.TryCreate(1)!.Value)));
 
         // A provider that never answers on its own: it only returns when the token it was given is cancelled.
         Mock<IProviderService> provider = new();
