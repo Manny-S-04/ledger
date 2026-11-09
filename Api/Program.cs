@@ -74,7 +74,15 @@ public static class Program
         builder.Services.AddScoped<CreateUserHandler>();
         builder.Services.AddScoped<AuthenticateHandler>();
         builder.Services.AddScoped<IAccountRepository, AccountRepository>();
-        builder.Services.AddSingleton<IProviderService, StubProviderService>();
+        string providerBaseUrl =
+            builder.Configuration["Provider:BaseUrl"]
+            ?? throw new InvalidOperationException("Config 'Provider:BaseUrl' is missing.");
+        TimeSpan providerTimeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Provider:TimeoutSeconds", 60));
+        builder.Services.AddHttpClient<IProviderService, HttpProviderService>(client =>
+        {
+            client.BaseAddress = new Uri(providerBaseUrl.TrimEnd('/') + "/");
+            client.Timeout = providerTimeout;
+        });
         builder.Services.AddScoped<CreateAccountHandler>();
         builder.Services.AddScoped<DeleteAccountHandler>();
         builder.Services.AddScoped<GetAccountsByEmailHandler>();

@@ -24,12 +24,13 @@ public static class AccountEndpoints
     private record TopUpAccountRequest(int AccountId, decimal Amount, string Currency);
 
     // Mirrors the provider's callback payload (FakeProvider CallbackPayload). Only Reference and Status are used.
+    // No amount: it comes from the pending top-up row written at initiation.
     private record TopUpAccountCallbackRequest(
+        string? EventId,
         string? ProviderReference,
         string? Reference,
         string? Status,
         string? FailureReason,
-        decimal Amount,
         string? Currency,
         long Sequence);
 
